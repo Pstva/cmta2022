@@ -1,0 +1,227 @@
+---
+title: "01. Counting words. Basic text Preprocessing."
+author: "Alena Pestova"
+date: '2022-09-04'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Loading data
+
+Text mining tasks usually deal with a large number of text fragments:
+e. g. tweets, news, reviews etc. Having obtained these kind of data,
+we commonly have them in a table format with one of the columns
+containing text data, one at a line. Other columns typically contain
+some *metadata* about the text: author, title, date etc.
+
+Our today's example is a collection of State of Union addresses yearly
+given by the US president since 18th century till 2018. The source of
+data: https://github.com/BrianWeinstein/state-of-the-union
+
+```{r}
+library(readr)
+data <- read_csv("data/transcripts.csv")
+```
+
+One line in a table corresponds to a president's speech. Texts are
+located in the transcript column.
+
+Our ultimate goal is to use information contained in the texts as
+variable(s) to include in our models and hypothesis testing.
+This means that we should be able to apply simple mathematical
+operations to texts. For instance, what text is “greater” in some
+sense? How to measure and compare distance between texts? 
+
+The key to the solution is to split the text into some simple units
+which can be easily compared... yes, words. 
+
+Still, to work with it as with data, we need to have the split text
+also in a table form. There are two useful formats to do that:
+
+* **long format** — a line in a table is created for each *word* in a
+  text.
+* **wide format** — a *column* is created for each word, a line
+  corresponds to a single text.
+
+We start with the long format.
+
+### Tokenization
+
+We can tokenize the words with the function **unnest_tokens** from the **tidytext** library.
+
+```{r}
+library(dplyr)
+library(tidytext)
+data_words <- data %>% dplyr::select(president, transcript) %>% tidytext::unnest_tokens(words, transcript)
+data_words
+```
+
+### Counting word frequencies
+
+```{r}
+freqlist <- data_words %>% count(words, sort=TRUE)
+freqlist
+```
+
+Total size of the corpus:
+```{r}
+sum(freqlist$n)
+```
+
+Vocabulary size:
+```{r}
+nrow(freqlist)
+```
+
+
+### Distribution of word frequencies
+
+Let's save 50 most frequent words.
+
+```{r}
+freq_top50 <- freqlist %>% top_n(50)
+```
+
+Distribution of these words:
+
+```{r}
+library(ggplot2)
+ggplot(freq_top50, aes(reorder(words, -n), n)) +
+  geom_point(stat = "identity") +
+  geom_line(group = 1) +
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.7)) +
+  xlab("Words") +
+  ylab("Frequency") +
+  ggtitle("Distribution of the most frequent words")
+```
+
+Distribution of word frequencies — adding the column "rank" (index of the word in the sorted frequency list):
+
+```{r}
+data_freq <- freqlist %>% mutate(rank = row_number())
+data_freq
+```
+
+Full distribution:
+
+```{r}
+ggplot(data_freq, aes(rank, n)) + geom_point(stat = "identity", cex=0.5) +
+  geom_line(group = 1) +
+  xlab("Rank") +
+  ylab("Frequency") +
+  ggtitle("The Zipf Curve")
+```
+
+Rare words from the tail of the distribution:
+
+```{r}
+freqlist %>% tail(20)
+```
+
+Words from the middle:
+
+```{r}
+freqlist %>% filter(row_number() > nrow(freqlist)/2)
+```
+
+More or less frequent words: 
+
+```{r}
+freqlist %>% filter(n < 50)
+```
+
+### Zipf's Law
+
+Distribution of words frequencies in a logarithmic scale:
+
+```{r}
+ggplot(data_freq, aes(rank, n)) + geom_point(stat = "identity", cex=0.5) +
+  geom_line(group = 1) +
+  scale_y_log10() +
+  scale_x_log10() +
+  xlab("Rank") +
+  ylab("Frequency") +
+  ggtitle("The Zipf Curve (log)")
+```
+
+
+### Stopwords
+
+The most frequent words in any language — prepositions, conjunctions,
+pronouns — have the most abstract meaning. If we are interested in
+analysing content of the texts, they are not informative to us. 
+Let's try to get rid of them.
+
+The list of these grammatical words for English and other languages
+may be found in the stopwords package.
+
+```{r}
+#install.packages('stopwords')
+library(stopwords)
+stopwords("en")
+```
+
+We have already seen a very similar list...
+
+```{r}
+head(data_freq, 15)
+```
+
+Let's eliminate stopwords from the text and look what is left. 
+
+```{r}
+enstopwords <- data.frame(words=stopwords("en"), stringsAsFactors=FALSE)
+data.nonstop <- data_words %>%
+    anti_join(enstopwords)
+```
+
+What percentage of total text volume has been removed? -- 49,6%
+
+```{r}
+(nrow(data_words) - nrow(data.nonstop) ) / nrow(data_words)
+```
+
+## Wordcloud
+
+Now we are going to represent the list of the most frequent words as a
+word cloud.
+
+```{r}
+library(wordcloud)
+data.nonstop %>%
+    dplyr::count(words) %>%
+    with(wordcloud(words, n, max.words = 100))
+```
+
+
+## Normalized frequency
+
+Now that we have started to compare frequency lists (wordclouds), it
+is useful to represent counts on a normalized scale (presidents vary in
+eloquence and verbosity!). A conventional unit for word frequencies in
+corpus linguistics is IPM (Instances Per Million).
+
+
+```{r}
+data_norm_freq <- data_words %>%
+    dplyr::group_by(president) %>%
+    dplyr::mutate(totalwords=n()) %>%
+    dplyr::group_by(president, words) %>%
+    dplyr::mutate(count=n()) %>%
+    dplyr::mutate(freq = count * ( 10e+6 / totalwords )) %>%
+    dplyr::slice(1)
+```
+
+
+**Task for you:**
+
+1. Select any two presidents from the dataset. Build a frequency list
+   and a wordcloud for each of them. Use the list of stopwords from
+   the stopwords package.
+2. The same as (1), but use the most frequent words from our dataset
+   as a list of stopwords (experiment with different number of stopwords).
+3. Make two Zipf-plots for speeches before and after 1917.
+   Hint: there is an example in the [Tidytext book](https://www.tidytextmining.com/tfidf.html#zipfs-law).
