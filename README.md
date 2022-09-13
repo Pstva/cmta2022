@@ -7,3 +7,5 @@ Based on [the course by Maslinsky K.A.](https://github.com/maslinych/cmta2021).
 
 [Telegram chat](https://t.me/+VQtMJG6rYaA3MzE6)
 
+
+To contact me, write on e-mail (aspestova@hse.ru) or in Telegram (@alyonapestova).
