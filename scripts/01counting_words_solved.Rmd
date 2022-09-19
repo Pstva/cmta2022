@@ -1,0 +1,131 @@
+---
+title: "01.Solved practice"
+author: "Alena Pestova"
+date: '2022-09-04'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+**Task for you:**
+
+
+1. Select any two presidents from the dataset. Build a frequency list
+   and a wordcloud for each of them. Use the list of stopwords from
+   the stopwords package.
+   
+```{r}
+library(wordcloud)
+library(readr)
+library(stopwords)
+library(dplyr)
+library(tidytext)
+
+enstopwords <- data.frame(words=stopwords("en"), stringsAsFactors=FALSE)
+
+data <- read_csv("data/transcripts.csv")
+# tokenization, take *date* column as well, we will need it for the third task
+data_words <- data %>% dplyr::select(president, transcript, date) %>% tidytext::unnest_tokens(words, transcript)
+data_words
+```
+
+```{r}
+# filtering two presidents we select
+trump <- data_words %>% filter(president == 'Donald J. Trump')
+obama <- data_words %>% filter(president == 'Barack Obama')
+```
+
+```{r}
+# making frequency lists for both presidents
+trump_freqlist <- trump %>% count(words, sort=TRUE)
+obama_freqlist <- obama %>% count(words, sort=TRUE)
+```
+
+Here I try to use another package to make wordclouds. It seems to be more user-friendly, documentation is here: https://cran.r-project.org/web/packages/wordcloud2/vignettes/wordcloud.html
+
+```{r}
+install.packages('wordcloud2')
+library(wordcloud2)
+
+
+#wordcloud for trump
+trump_freqlist %>%
+    anti_join(enstopwords) %>%
+    # taking top-200 words to plot
+    top_n(200) %>%
+    wordcloud2( size=1.6, color='random-dark')
+```
+
+```{r}
+
+#wordcloud for obama
+obama_freqlist %>%
+    anti_join(enstopwords) %>%
+    top_n(200) %>%
+    wordcloud2( size=1.6, color='random-dark')
+```
+
+   
+2. The same as (1), but use the most frequent words from our dataset
+   as a list of stopwords (experiment with different number of stopwords).
+   
+*Here you can use other ways for cutting stop-words*
+   
+```{r}
+# stopwords as the top-N list from the whole data, let's take top-100
+freqlist <- data_words %>% dplyr::count(words, sort=TRUE)
+freq_top100 <- freqlist %>% top_n(100)
+```
+```{r}
+# everything the same, jusr dropping our stopwords, not the static list
+
+#wordcloud for trump
+trump_freqlist %>%
+    anti_join(freq_top100, by='words') %>%
+    # taking top-200 words to plot
+    top_n(200) %>%
+    wordcloud2( size=1.6, color='random-dark')
+
+```
+
+```{r}
+#wordcloud for obama
+obama_freqlist %>%
+    anti_join(freq_top100, by='words') %>%
+    # taking top-200 words to plot
+    top_n(200) %>%
+    wordcloud2( size=1.6, color='random-dark')
+```
+
+
+3. Make two Zipf-plots for speeches before and after 1917.
+   Hint: there is an example in the [Tidytext book](https://www.tidytextmining.com/tfidf.html#zipfs-law).
+   
+```{r}
+library(lubridate)
+data_words$year = year(data_words$date)
+
+library(ggplot2)
+
+data_before = data_words %>% filter(year <= 1917) %>% dplyr::count(words, sort=TRUE)
+data_after = data_words %>% filter(year > 1917) %>% dplyr::count(words, sort=TRUE)
+
+data_before = data_before %>% mutate(rank = row_number())
+data_after = data_after %>% mutate(rank = row_number())
+
+ggplot() +
+  geom_point(data=data_before, aes(rank, n), stat = "identity", cex=0.5, col='blue') +
+  geom_point(data=data_after, aes(rank, n), stat = "identity", cex=0.5, col='red') +
+  geom_line(group = 1) +
+  scale_y_log10() +
+  scale_x_log10() +
+  xlab("Rank") +
+  ylab("Frequency") +
+  ggtitle("The Zipf Curve (log)")
+  
+
+```
+
