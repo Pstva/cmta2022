@@ -1,0 +1,245 @@
+---
+title: "02.Text_Preprocessing"
+author: "Alena Pestova"
+date: '2022-09-19'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+Let's continue to work with the speeches of American Presidents. 
+Again, we want to look at the frequency lists. 
+Let's add n-gram tokenization and more preprocessing to our analysis.
+
+```{r}
+library(readr)
+library(dplyr)
+data <- read_csv('data/transcripts.csv') %>% dplyr::select(president, transcript)
+head(data)
+```
+
+
+
+## Tokenization: N-grams
+
+You can change the default arguments in the function *unnest_tokens* that we have already used and use it for tokenizing the text into n-grams.
+So, here we specify the arguments **token = "ngrams"** and  **n = 2**  and get bigrams.
+
+It's important to understand that n-grams are formed overlapped:
+
+```{r}
+library(tidytext)
+
+bigrams <- data %>% unnest_tokens(bigram, transcript, token = "ngrams", n = 2)
+bigrams
+```
+
+Again, we can build the frequency list but for bigrams.
+
+```{r}
+bigrams.freq <- bigrams %>% count(bigram, sort=TRUE)
+bigrams.freq
+```
+
+The next task is to get a frequency list of only those bigrams
+which do not contain stop words (to see more meaningful
+digrams). This will require several steps.
+
+We split the column with bigrams into two columns with separate words,
+constituting a bigram (function *tidyr::separate*):
+
+```{r}
+library(tidyr)
+bigrams.sep <- bigrams %>%
+  separate(bigram, c("word1", "word2"), sep = " ") 
+```
+
+We load the list of stopwords for the English language from the *stopwords* package and
+format it as a table column.
+
+```{r}
+library("stopwords")
+enstopwords <- tibble(word = stopwords("en"))
+enstopwords
+```
+
+We exclude stop words (on the first and second positions in the bigram):
+
+```{r}
+bigrams.nonstop <- bigrams.sep %>% 
+  anti_join(enstopwords, by = c(word1="word")) %>% 
+  anti_join(enstopwords, by = c(word2="word"))
+```
+
+Building a frequency list:
+
+```{r}
+bigrams.nonstop %>% 
+  count(word1, word2, sort=TRUE)
+```
+
+
+
+## More preprocessing. Stemming and lemmatization
+
+Before we move on to measuring the prevalence of content words, it is
+beneficial to make our text data less noisy. In natural language the
+same word may take various surface forms: plurals, past tense
+etc. This may be of less concern for English, but more so for more
+inflected languages. When we are interested in content, it is better
+to treat all these *wordforms* as the same word.
+
+There are two common approaches.
+
+1. **Stemming**. Simply remove word endings that contain inflection,
+   leaving a *stem*. The approach is simple and fast, and is
+   supported by numerous R packages.
+2. **Lemmatization**. Reduce a word to its dictionary form — a
+   *lemma*. This requires more linguistic data (dictionary etc.), but
+   gives more precise results. We will stick to this method.
+   
+   
+For English language you can use functions:
++"SnowballC::wordStem" from the package *SnowballC* for stemming
++"textstem::lemmatize_words" from the package *textstem* for lemmatizatoin.
+
+   
+```{r}
+library(textstem)
+library(SnowballC)
+library(stringr)
+
+# stemming
+data %>%
+    unnest_tokens(word, transcript) %>%
+    mutate(stem = wordStem(word)) %>%
+    filter(!word %in% stopwords("en")) %>%
+    # dropping the digits
+    filter(!str_detect(word, "[0-9]+"))
+
+```
+
+
+```{r}
+# lemmatization
+
+data %>%
+    unnest_tokens(word, transcript) %>%
+    mutate(lemma = lemmatize_words(word)) %>%
+    filter(!word %in% stopwords("en")) %>%
+    filter(!str_detect(word, "[0-9]+"))
+
+```
+
+
+We tokenized the text, stemmed/lemmatized it, then filtered the stopwords and digits.
+
+### Regular Expressions
+
+What's this? This is a special language for describing string patterns, which
+used to find individual strings, checking them for
+starts with some pattern and similar tasks. Regular
+expression is an indispensable tool for parsing text data, working with
+text during preprocessing and capture  information from the text.
+
+Useful resources:
+
+1. In English: https://www.rdocumentation.org/packages/base/versions/3.6.2/topics/regex
+2. In Russian: http://website-lab.ru/article/regexp/shpargalka_po_regulyarnyim_vyirajeniyam/
+
+How can we use regular expressions for our task? For example, we may want to get rid of the punctuation:
+
+(using function gsub from base package in  R):
+
+```{r}
+data$text_clean <- gsub("[[:punct:]]", " ", data$transcript)
+head(data)
+```
+
+Dropping the digits (using the function str_replace_all from the stringr package, which is identical to gsub )
+
+
+```{r}
+library(stringr)
+data$text_clean <- str_replace_all(data$text_clean, "[0-9]+", " ")
+head(data)
+```
+
+with the function *str_detect* from the package *stringr* we can detect the words with digits (or just digits)
+
+```{r}
+
+data %>%
+    unnest_tokens(word, transcript) %>%
+    filter(!str_detect(word, "[0-9]+"))
+```
+
+### POS-tagging
+
+You can use *udpipe* package for tagging parts of speech in English.
+Some docs for https://ladal.edu.au/tagging.html.
+
+POS tags description: https://universaldependencies.org/u/pos/index.html
+
+```{r}
+#install.packages('udpipe')
+#install.packages("here")
+library(udpipe)
+library(here)
+```
+
+
+```{r}
+# download language model
+m_eng <- udpipe::udpipe_download_model(language = "english-ewt")
+```
+
+If you have downloaded a model once, you can also load the model directly from the place where you stored it on your computer. 
+
+(first argument - the folder you store the model)
+```{r}
+# load language model from your computer after you have downloaded it once
+
+m_eng <- udpipe_load_model(file = here::here("Рабочий стол/CMAT/cmta2022/scripts", "english-ewt-ud-2.5-191206.udpipe"))
+```
+
+We can now use the model to annotate out text.
+
+Some documentation on the function udpipe::udpipe_annotate: https://rdrr.io/cran/udpipe/man/udpipe_annotate.html
+
+```{r}
+obama_speeches <- data %>% filter(president=='Barack Obama')
+
+# tokenise, POS-tagging
+text_anndf <- udpipe::udpipe_annotate(m_eng, x =  obama_speeches$transcript, tagger = "default", parser = "none") %>%
+  as.data.frame() %>%
+  dplyr::select(-sentence) 
+```
+
+
+```{r}
+head(text_anndf, 10)
+```
+
+```{r}
+text_anndf %>% select(doc_id, token, lemma, upos)
+```
+
+
+You can use the package udpipe for lemmatization and POS-tagging texts in Russian. One more useful took for these tasks is Mystem (https://yandex.ru/dev/mystem/) by Yandex. I will share the materials on its use later.
+
+## Task for you
+
+1. Build the frequency lists with bigrams for some two presidents. 
+They shouldn't contain stop-words, digits and the words should be lemmatized.
+Compare the tops of these two lists, try to find some interesting differences.
+
+2. Using udpipe package, tag POS-tags for both presidents, select only nouns (NOUN and PROPN) and build frequency lists with lemmas.
+Draw wordclouds for both lists.
+
+3. For both presidents, calculate the number of the words of each POS-tag. Draw the graphs with the distributions of the parts of speech.
+
+
