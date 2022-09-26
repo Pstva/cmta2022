@@ -1,0 +1,266 @@
+---
+title: "03contrastive_analysis"
+author: "Alena Pestova"
+date: "2022-09-26"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## Comparing word usage in contrasting corpora
+
+For social and political science, texts usually serve as proxy to some
+social phenomenon, sentiment, idea, or discourse. In a common research
+design, texts from several institutions, groups or actors are
+collected. These make two (or more) *contrasting corpora*. Differences
+in word usage in these corpora are used to infer something about the
+underlying social/political features of the entities these corpora
+represent.
+
+But what if we are interested in comparing *content* of the
+speech?  How to select words that are interesting? How to avoid
+arbitrary choice? To accomplish this, we need some statistical tests
+that could show which words are significantly over- or underused in
+one corpus **in contrast** to another.
+
+
+## Prepare data
+
+Load State of the Union data:
+
+```{r}
+library(readr)
+sou <- read_csv("data/transcripts.csv")
+```
+
+We will now create two corpora for contrasting: speeches by Democratic and
+Republican presidents since 1917.
+
+```{r}
+library(dplyr)
+democrats <- c("Woodrow Wilson", "Franklin D. Roosevelt", "Harry
+S. Truman", "John F. Kennedy", "Lyndon B. Johnson", "Jimmy Carter",
+"William J. Clinton", "Barack Obama")
+sou.democrats <- sou %>%
+    filter(president %in% democrats)
+sou.republicans <- sou %>%
+    filter(date > "1917-10-25" & !president %in% democrats)
+```
+
+Frequency lists for democratic and republican candidates
+
+```{r}
+library(stopwords)
+library(tidytext)
+
+sou.long.dem <- sou.democrats %>%
+    unnest_tokens(words, transcript)
+
+freq.list.dem <- sou.long.dem %>% dplyr::count(words, sort=TRUE)
+
+enstopwords <- data.frame(words=stopwords("en"), stringsAsFactors=FALSE)
+freq.list.dem <- freq.list.dem %>%
+    anti_join(enstopwords)
+freq.list.dem <- freq.list.dem %>% mutate(n2 = n/sum(n))
+head(freq.list.dem)
+```
+
+```{r}
+sou.long.rep <- sou.republicans %>%
+    unnest_tokens(words, transcript)
+
+freq.list.rep <- sou.long.rep %>% dplyr::count(words, sort=TRUE)
+
+freq.list.rep <- freq.list.rep %>%
+    anti_join(enstopwords)
+
+freq.list.rep <- freq.list.rep %>% mutate(n2 = n/sum(n))
+
+head(freq.list.rep)
+```
+
+## Leammtization, dropping digits
+
+```{r}
+library(textstem)
+library(stringr)
+
+democrats.long <- sou.democrats %>%
+    unnest_tokens(word, transcript) %>%
+    mutate(lem = lemmatize_words(word)) %>%
+    filter(! lem %in% stopwords("en")) %>%
+    filter(! str_detect(lem, "[0-9]+")) %>%
+    mutate(party = "democrat")
+
+
+republicans.long <- sou.republicans %>%
+    unnest_tokens(word, transcript) %>%
+    mutate(lem = lemmatize_words(word)) %>%
+    filter(! lem %in% stopwords("en")) %>%
+    filter(! str_detect(lem, "[0-9]+")) %>%
+    mutate(party = "republican")
+
+```
+
+To make data for comparisons, we now create lemma frequency lists for
+both corpora and join them in a single table.
+Filter out rare words (n<10 for both parties).
+
+
+```{r}
+library(tidyr)
+party.lemmas <- bind_rows(democrats.long, republicans.long) %>%
+    dplyr::count(lem, party) %>%
+    spread(party, n, fill = 0) %>%
+    dplyr::filter(democrat > 10 | republican > 10)
+
+head(party.lemmas)
+```
+
+
+## Normalized frequency
+
+Now that we have started to compare frequency lists (wordclouds), it
+is useful to represent counts on a normalized scale (presidents vary in
+eloquence and verbosity!). A conventional unit for word frequencies in
+corpus linguistics is IPM (Instances Per Million).
+
+
+```{r}
+# the number of all words (lemmas) in democrats speaches
+dem_num = sum(party.lemmas$democrat)
+# in republicans
+rep_num = sum(party.lemmas$republican)
+
+party.ipms <- party.lemmas
+party.ipms$democrat <- party.ipms $ democrat * ( 10e+6 / dem_num )
+party.ipms$republican <- party.ipms $ republican * ( 10e+6 / rep_num )
+head(party.ipms)
+```
+
+
+We can look at the top-N words for both parties
+
+```{r}
+# for democrats
+party.ipms %>% arrange(desc(democrat)) 
+```
+
+```{r}
+# for republicans
+party.ipms %>% arrange(desc(republican)) 
+```
+
+
+the same words - not very informative :(
+
+
+## Dunning log-likelihood (G^2)
+
+The most commonly used statistical measure to evaluate the
+the difference of a word's frequency in two corpora is
+called log-likelihood (G-squared). 
+
+We start with defining a function that will calculate a list of G2
+values given two columns of frequencies (in corpora A and B).
+
+
+```{r}
+g2 = function(a, b) {
+  c = sum(a)
+  d = sum(b)
+  E1 = c * ((a + b) / (c + d))
+  E2 = d * ((a + b) / (c + d))
+  return(2*((a*log(a/E1+1e-7)) + (b*log(b/E2+1e-7))))
+}
+```
+
+Now we can calculate log-likelihood for lemma frequency
+differences for each party:
+
+```{r}
+party.g2 <- party.lemmas %>% 
+    mutate(g2=g2(democrat, republican)) %>%
+    arrange(desc(g2)) %>%
+    mutate(g2 = round(g2, 2))
+
+party.g2
+```
+
+   
+Note that the many of the most frequent words turned out to also be
+the most significantly disproportional. This should rise suspicions.
+
+
+## Effect size. Log Ratio
+
+So we are going to supplement our log-likelihood tests with an effect
+size measure that allow to quantify, how large exactly is the difference
+of frequencies.
+
+We will use the most conceptually simple effect size measure: Log odds
+ratio (See more details and examples in [Text mining with R
+book](https://www.tidytextmining.com/twitter.html#comparing-word-usage)). 
+
+Here we define a function similar to g2, and apply it to our data. 
+
+```{r}
+logratio <- function(a, b) {
+    return(log2((a/sum(a)/(b/sum(b)))))
+}
+```
+
+Now we may add odds to our table.
+
+```{r}
+party.lr <- party.g2 %>%
+    mutate(logodds = logratio(democrat, republican))
+```
+
+Words used evenly by both parties:
+
+```{r}
+party.lr %>%
+    arrange(abs(logodds))
+```
+
+Words most acutely overused by one or the other party:
+
+```{r}
+party.disproportion <- party.lr %>%
+    dplyr::filter(democrat > 0 & republican > 0) %>%
+    group_by(logodds < 0) %>%
+    top_n(15, abs(logodds)) %>%
+    ungroup()
+head(party.disproportion)
+```
+
+The same result in a nice looking plot.
+
+```{r}
+library(ggplot2)
+party.lr %>%
+    filter(democrat > 0 & republican > 0) %>%
+    group_by(logodds < 0) %>%
+    top_n(15, abs(logodds)) %>%
+    ungroup() %>%
+    mutate(lem = reorder(lem, logodds)) %>%
+    ggplot(aes(lem, logodds, fill = logodds > 0)) +
+    geom_col(show.legend = FALSE) +
+    coord_flip() +
+    ylab("log odds ratio (Democrats/Republicans)") +
+    scale_fill_discrete(name = "", labels = c("Democrats", "Republicans"))
+```
+
+## Task for you:
+
+1. Examine G2 values. Look at the top-30 most significant words for both parties. Draw the same graph as for log-odds. Compare two graphs.
+
+2. Remember that G2 is the test statistic and you can calculate the statistical significance of the difference between word frequencies with it.  Statistically significant difference at the level 0.05 for 2 words in corpora can be found of you take G2 > 3.84. Define the words which are statistically significant different using this method. Then, draw the same graph for log-odds but only for the words that are significantly different. Is there a difference between this and the previous graph for log odds ratio?
+
+3. Work with PMI table. Calculate the frequency ratio for both parties (first slides of the lecture). Use different n (1, 100, 1000, 10000) as a constant that you add to frequencies and compare the results (the top words for each party). Draw the distributions of the ratios for each n.
+
+
