@@ -1,0 +1,148 @@
+---
+title: "02.Text_Preprocessing"
+author: "Alena Pestova"
+date: '2022-09-19'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## Task solved
+
+Here I make all the calculations only for one president. 
+
+1. Build the frequency lists with bigrams for some two presidents. 
+They shouldn't contain stop-words, digits and the words should be lemmatized.
+Compare the tops of these two lists, try to find some interesting differences.
+
+
+```{r}
+library(readr)
+library(dplyr)
+data <- read_csv('data/transcripts.csv') %>% dplyr::select(president, transcript)
+# filter presidents
+data <- data %>% filter(president == 'Barack Obama')
+head(data)
+```
+
+Tokenizing to bigrams
+
+```{r}
+library(tidytext)
+
+bigrams <- data %>% unnest_tokens(bigram, transcript, token = "ngrams", n = 2)
+bigrams
+```
+
+Separating to separate columns
+
+
+```{r}
+library(tidyr)
+bigrams <- bigrams %>% separate(bigram, c("word1", "word2"), sep = " ")
+bigrams
+```
+
+Lemmatization + dropping stopwords + dropping tokens with the digits
+
+```{r}
+library(textstem)
+library(stringr)
+library("stopwords")
+
+bigrams <- bigrams %>%
+  mutate(lem1 = lemmatize_words(word1), lem2 = lemmatize_words(word2)) %>%
+  filter(!lem1 %in% stopwords("en") & !lem2 %in% stopwords("en")) %>%
+    # dropping the digits
+  filter(!str_detect(lem1, "[0-9]+") & !str_detect(lem2, "[0-9]+"))
+
+head(bigrams)
+```
+
+
+Frequency list
+
+```{r}
+bigrams %>% dplyr:: count(lem1, lem2, sort=TRUE)
+```
+
+or we can concatenate two words into one column
+
+```{r}
+bigrams <- bigrams %>%
+  mutate(bigram = paste(lem1, lem2, sep=" "))
+
+bigrams %>% dplyr:: count(bigram, sort=TRUE)
+
+```
+
+2. Using udpipe package, tag POS-tags for both presidents, select only nouns (NOUN and PROPN) and build frequency lists with lemmas.
+Draw wordclouds for both lists.
+
+```{r}
+library(udpipe)
+# download language model
+#m_eng <- udpipe::udpipe_download_model(language = "english-ewt")
+# loading the model
+# you can put path to the model on your computer to file=
+model <- udpipe_load_model(file = "english-ewt-ud-2.5-191206.udpipe")
+
+```
+
+annotating corpus
+
+```{r}
+# tokenise, POS-tagging
+text_anndf <- udpipe::udpipe_annotate(model, x =  data$transcript, tagger = "default", parser = "none") %>%
+  as.data.frame() %>%
+  dplyr::select(-sentence) 
+
+head(text_anndf, 10)
+```
+
+
+
+```{r}
+text_anndf <- text_anndf %>% select(lemma, upos) 
+text_anndf_filtered <- text_anndf %>% filter(upos == "NOUN" | upos == "PROPN")
+head(text_anndf_filtered)
+```
+
+frequency list
+
+```{r}
+noun_freqlist <- text_anndf_filtered %>% dplyr::count(lemma, sort=TRUE)
+```
+
+
+wordcloud
+
+```{r}
+#install.packages('wordcloud2')
+library(wordcloud2)
+
+noun_freqlist %>%
+    top_n(200) %>%
+    wordcloud2( size=1.6, color='random-dark')
+```
+
+
+3. For both presidents, calculate the number of the words of each POS-tag. Draw the graphs with the distributions of the parts of speech.
+
+
+```{r}
+library(ggplot2)
+pos_list <- text_anndf %>% group_by(upos) %>% dplyr::count(sort=TRUE)
+pos_list
+```
+
+```{r}
+ggplot()+
+  geom_bar(data=pos_list, aes(x=reorder(upos, n), y=n), stat='identity', col='blue', fill='light blue') +
+  xlab("Part of speech tag") +
+  ylab("Count")
+```
+
