@@ -173,9 +173,9 @@ Standard solution - add 1:
   \begin{tabular}[l]{lcccccc}
     word & fc & rc & fc+n & rc+n & ratio & rank \\
     \hline
-    rare & 200 & 300 & 200 & 101 & 1,50 & 1 \\
-    sometimes & 10 & 0 & 110 & 100 & 1,10 &  3 \\
-    frequent & 12000 & 10000 & 12100 & 10100 & 1,20 & 2 \\
+    rare & 200 & 300 & 300 & 400 & 0.75 & 1 \\
+    sometimes & 10 & 0 & 110 & 100 & 1,10 &  2 \\
+    frequent & 12000 & 10000 & 12100 & 10100 & 1,20 & 1 \\
   \end{tabular}
 
   \end{itemize}
@@ -266,7 +266,7 @@ A way to incorporate word frequencies into the statistical test paradigm:
 
 \begin{frame}{Log-odds}
 
-  $$\text{LR} = \log\frac{(a/E1)}{(b/E2)}$$
+  $$\text{LR} = \log\frac{(a/sum(a))}{(b/sum(b))}$$
 
 \end{frame}
 
