@@ -173,7 +173,7 @@ Standard solution - add 1:
   \begin{tabular}[l]{lcccccc}
     word & fc & rc & fc+n & rc+n & ratio & rank \\
     \hline
-    rare & 200 & 300 & 300 & 400 & 0.75 & 1 \\
+    rare & 200 & 300 & 300 & 400 & 0.75 & 3 \\
     sometimes & 10 & 0 & 110 & 100 & 1,10 &  2 \\
     frequent & 12000 & 10000 & 12100 & 10100 & 1,20 & 1 \\
   \end{tabular}
@@ -220,22 +220,37 @@ A way to incorporate word frequencies into the statistical test paradigm:
     \hline
     Word Frequency & a & b & a+b \\
     \hline
-    Frequency of other words & c-a & d-b & c+d-a-b \\
+    Frequency of other words & c & d & c+d \\
     \hline
-    Total & c & d & c+d \\
+    Total & a+c & b+d & a+b+c+d \\
     \hline
   \end{tabular}
 
 \bigskip
   Expected frequencies:
   \begin{itemize}
-  \item[E1] $\frac{c}{c+d}(a+b)$
-  \item[E2] $\frac{d}{c+d}(a+b)$
+  \item[Eij] $\frac{R_iC_j}{N}$
+  \item[E1] $\frac{(a+b)(a+c)}{(a+b+c+d)}$
+  \item[E2] $\frac{(a+b)(b+d)}{(a+b+c+d)}$
+  \item[E3] $\frac{(c+d)(a+c)}{(a+b+c+d)}$
+  \item[E3] $\frac{(c+d)(b+d)}{(a+b+c+d)}$
   \end{itemize}
 
-  \begin{equation}
-    LL = G^2 = 2 (a \log (a/E1) + b \log (b/E2) ) 
-  \end{equation}
+\end{frame}
+\begin{frame}{Dunning log-likelihood: formulas}
+
+
+  old:\\
+
+  $LL = G^2 = 2 (a \log (a/E1) + b \log (b/E2)$ \\
+
+
+  new (almost equal to the previous one):\\
+  
+  $LL = G^2 = 2 (a \log (a/E1) + b \log (b/E2) +c \log(c/E3) + d \log(d/E4))$
+
+
+
 \end{frame}
 
 \begin{frame}
@@ -279,100 +294,148 @@ A way to incorporate word frequencies into the statistical test paradigm:
 \end{frame}
 
 
-%\begin{frame}
-%  \frametitle{Сonditional Probability}
-%$$
-%    P(Event|Condition)
-%$$
-%\end{frame}
-%
-%\begin{frame}
-%  \frametitle{Сonditional Probability}
-%  \begin{equation}
-%    P(B|A) = \frac{P(B \land A)}{P(A)}
-%  \end{equation}
-%
-%  $$
-%    P(\text{intelligence}|\text{artificial}) =
-%    \frac{P(\text{artificial intelligence})}{P(\text{artificial})}
-%    =$$
-%
-%    $$
-%    = \frac{\frac{4}{46804371}}{\frac{121}{46804371}} = \frac{4}{121} = 0.033$$
-%\end{frame}
+\begin{frame}{Collocations}
+  Collocations is a term that denotes pairs of words that not only stand
+togther frequently, but their appearence next to each other is above
+the mere chance. That means, there is statistically significant
+association between these words.
+\end{frame}
 
-%\begin{frame}
-%  \frametitle{Pointwise mutual information}
-%  \begin{columns}
-%    \column{.5\textwidth}
-%    PMI
-%
-%  $$
-%  pmi(x;y) = log \frac{p(x,y)}{p(x)p(y)} =
-%  $$
-%  $$
-%  = log \frac{p(x|y)}{p(x)} =
-%  $$
-%  $$
-%  = log \frac{p(y|x)}{p(y)}
-%  $$
-%
-%  Positive PMI
-%
-%    $$
-%    ppmi(x;y) = max(pmi(x;y),0)
-%    $$
-%    \column{.5\textwidth}
-%  \includegraphics[width=\textwidth]{log}
-%  \end{columns}
-%\end{frame}
+\begin{frame}
+  \frametitle{Сonditional Probability}
+$$
+    P(Event|Condition)
+$$
+\end{frame}
 
-%\begin{frame}
-%  \frametitle{The problem of PMI}
-%  \begin{itemize}
-%  \item Very sensitive to rare events that are highly informative relative to each other (words always occur together)
-%    [increase the degree of difference for rare words]
-%  \end{itemize}
-%\end{frame}
+\begin{frame}
+  \frametitle{Сonditional Probability}
+  \begin{equation}
+    P(B|A) = \frac{P(B \land A)}{P(A)}
+  \end{equation}
+
+  $$
+    P(\text{intelligence}|\text{artificial}) =
+    \frac{P(\text{artificial intelligence})}{P(\text{artificial})}
+    =$$
+
+    $$
+    = \frac{\frac{4}{46804371}}{\frac{121}{46804371}} = \frac{4}{121} = 0.033$$
+\end{frame}
+
+\begin{frame}
+  \frametitle{Pointwise mutual information}
+  \begin{columns}
+    \column{.5\textwidth}
+    PMI
+
+  $$
+  pmi(x;y) = log \frac{p(x,y)}{p(x)p(y)} =
+  $$
+  $$
+  = log \frac{p(x|y)}{p(x)} =
+  $$
+  $$
+  = log \frac{p(y|x)}{p(y)}
+  $$
+
+  Positive PMI (negative values do not make much sense for word association measurements)
+
+    $$
+    ppmi(x;y) = max(pmi(x;y),0)
+    $$
+    \column{.5\textwidth}
+  \includegraphics[width=\textwidth]{log}
+  \end{columns}
+\end{frame}
+
+\begin{frame}
+  \frametitle{The problem of PMI}
+  \begin{itemize}
+  \item Very sensitive to rare events that are highly informative relative to each other (words always occur together)
+    [increase the degree of difference for rare words]
+  \end{itemize}
+\end{frame}
+
+\begin{frame}
+  PMI can be used:
+  \begin{itemize}
+    \item For extracting vocabulary specific to a given corpus (as well as G2, log-odds, frequency ratios)
+    \item For finding collocations in the text (as well as G2 and log-odds)
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{Contrastive analysis}
+  We have seen how to calculate metrics for contrastive analysis with g2 and log-odds. Let's use PMI for the same thing.
+  \begin{tabular}[l]{lcc}
+    word & fc & rc \\
+    \hline
+    sometimes & 200 & 100 \\
+    other words & 10000 & 20000\\
+  \end{tabular}
+
+  \begin{itemize}
+  \item $x$ - meeting the word "sometimes"
+  \item $y$ - corpus 1 (size of the corpus)
+  \item $p(x|y)= 200 / 10200 = 0.0196$ - probablity of meeting word "sometimes" in corpus 1
+  \item $p(x)= 300 / (300+10000+20000) = 0.0099$ - probablity of meeting word "sometimes" in total (in corpus 1 and corpus 2 in our case)
+  \end{itemize}
+  
+  $$pmi(x;y) = log \frac{p(x|y)}{p(x)} = log \frac{0.0196}{0.0099} = 0.9854$$
+\end{frame}
+
+\begin{frame}{Collocations}
+  \begin{tabular}[l]{lccc}
+    bigram & word1 freq & word2 freq & bigram freq \\
+    \hline
+    united states & 200 & 100 & 50\\
+    all other bigrams & 10000 & 10000 & ...\\
+  \end{tabular}
+    \begin{itemize}
+  \item $x$ - meeting the word "united" in the corpus
+  \item $y$ - meeting the word "states" in the corpus
+  \item $p(x)=200/10000 = 0.02$ - probability of meeting the word "united"
+  \item $p(x|y) = 50/1000=0.05$ - probability of meeting the word "united" together with the word "states"
+    \end{itemize}
+
+  $$pmi(x;y) = log \frac{p(x|y)}{p(x)} $$
+
+\end{frame}
+
+\begin{frame}
+  \frametitle{Dunning log-likelihood: formulas}
+  \begin{tabular}[c]{|p{.3\textwidth}|c|c|c|}
+    \hline
+   & Word 2 & not Word 2 & Total \\
+    \hline
+    Word 1 & a & b & a+b \\
+    \hline
+    not Word 1 & c & d & c+d \\
+    \hline
+    Total & a+c & b+d & a+b+c+d \\
+    \hline
+  \end{tabular}
+
+\bigskip
+  Expected frequencies:
+  \begin{itemize}
+  \item[Eij] $\frac{R_iC_j}{N}$
+  \item[E1] $\frac{(a+b)(a+c)}{(a+b+c+d)}$
+  \item[E2] $\frac{(a+b)(b+d)}{(a+b+c+d)}$
+  \item[E3] $\frac{(c+d)(a+c)}{(a+b+c+d)}$
+  \item[E3] $\frac{(c+d)(b+d)}{(a+b+c+d)}$
+  \end{itemize}
+
+    $LL = G^2 = 2 (a \log (a/E1) + b \log (b/E2) +c \log(c/E3) + d \log(d/E4))$
+
+\end{frame}
 
 
-%\begin{frame}
-%  \frametitle{The probability of independent events}
-%  Independent events - the occurrence of one does not change the probabilities
-%  another.
-%  \begin{equation}
-%    P(B|A) = P(B) \quad | P(B) > 0
-%  \end{equation}
-%
-%  \begin{equation}
-%    P(B \cap A) = P(A) \cdot P(B)
-%  \end{equation}
-%\end{frame}
+\begin{frame}{Collocations}
+  Now we can not only extract frequent bigrams, but also we can find words that significantly associated with each other.
 
-%\begin{frame}
-%  \frametitle{Joint Probability}
-%  \structure{For the independent events A и B}:
-%
-%    $p(\text{A and B}) = p(A)p(B)$ \quad{} | $p(B|A) = p(B)$
-%
-%    \bigskip
-%
-%  \pause
-%  \structure{In general case}:
-%
-%   $p(\text{A and B}) = p(A)p(B|A)$ \quad{} | $p(B|A) \neq p(B)$
-%\end{frame}
-
-%\begin{frame}
-%  \frametitle{Bayes rule}
-%  \begin{equation}
-%    P(A|B) = \frac{P(B|A)P(A)}{P(B)}
-%  \end{equation}
-%  \pause
-%  \begin{equation}
-%    posterior = \frac{likelihood \cdot prior}{evidence}
-%  \end{equation}
-%\end{frame}
+  We may be interested in collocations with some specific word.
+\end{frame}
 
 
 \begin{frame}

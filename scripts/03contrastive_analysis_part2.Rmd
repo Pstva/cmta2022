@@ -1,0 +1,364 @@
+---
+title: "Untitled"
+author: "Alena Pestova"
+date: "2022-10-03"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Contrastive analysis: part 2
+
+We will use the same data with presidents speeches. This is the same code for data preparation as we used on the previous practice.
+
+```{r}
+library(readr)
+library(textstem)
+library(stringr)
+library(tidyr)
+library(dplyr)
+library(stopwords)
+library(tidytext)
+
+sou <- read_csv("data/transcripts.csv")
+
+democrats <- c("Woodrow Wilson", "Franklin D. Roosevelt", "Harry
+S. Truman", "John F. Kennedy", "Lyndon B. Johnson", "Jimmy Carter",
+"William J. Clinton", "Barack Obama")
+sou.democrats <- sou %>%
+    filter(president %in% democrats)
+sou.republicans <- sou %>%
+    filter(date > "1917-10-25" & !president %in% democrats)
+
+sou.long.dem <- sou.democrats %>%
+    unnest_tokens(words, transcript)
+
+freq.list.dem <- sou.long.dem %>% dplyr::count(words, sort=TRUE)
+
+enstopwords <- data.frame(words=stopwords("en"), stringsAsFactors=FALSE)
+freq.list.dem <- freq.list.dem %>%
+    anti_join(enstopwords)
+freq.list.dem <- freq.list.dem %>% mutate(n2 = n/sum(n))
+
+sou.long.rep <- sou.republicans %>%
+    unnest_tokens(words, transcript)
+
+freq.list.rep <- sou.long.rep %>% dplyr::count(words, sort=TRUE)
+
+freq.list.rep <- freq.list.rep %>%
+    anti_join(enstopwords)
+
+freq.list.rep <- freq.list.rep %>% mutate(n2 = n/sum(n))
+
+democrats.long <- sou.democrats %>%
+    unnest_tokens(word, transcript) %>%
+    mutate(lem = lemmatize_words(word)) %>%
+    filter(! lem %in% stopwords("en")) %>%
+    filter(! str_detect(lem, "[0-9]+")) %>%
+    mutate(party = "democrat")
+
+
+republicans.long <- sou.republicans %>%
+    unnest_tokens(word, transcript) %>%
+    mutate(lem = lemmatize_words(word)) %>%
+    filter(! lem %in% stopwords("en")) %>%
+    filter(! str_detect(lem, "[0-9]+")) %>%
+    mutate(party = "republican")
+
+
+party.lemmas <- bind_rows(democrats.long, republicans.long) %>%
+    dplyr::count(lem, party) %>%
+    spread(party, n, fill = 0) # %>% dplyr::filter(democrat > 10 | republican > 10)
+
+head(party.lemmas)
+```
+
+
+## PMI — Pointwise mutual information
+
+Pointwise mutual information — $PMI = log2(p(x,y)/p(x)p(y)) = log2(p(x|y)/p(x)) = log2(p(y|x)/p(y))$
+
+Let's use this formula:
+$PMI = log2(p(x|y)/p(x))$
+
+* p(x|y) — probability of meeting the word x in the democrats speeches.
+* p(x) — probability of meeting the word x in all the speeches.
+
+Let's create columns with probabilites for PMI calculations
+
+```{r}
+party.lemmas <- party.lemmas %>% 
+  mutate(p.x_d  = democrat/sum(democrat), p.x_r = republican/sum(republican), p.x = (democrat+republican)/(sum(democrat)+sum(republican)))
+head(party.lemmas)
+```
+
+Let's calculate PMI and sort the lemmas by its value.
+
+```{r}
+party.lemmas <- party.lemmas %>%
+    mutate(democrat.pmi = log2(p.x_d/p.x)) %>%
+    mutate(republican.pmi = log2(p.x_r/p.x)) %>%
+    arrange(desc(democrat.pmi))
+party.lemmas
+```
+
+Let's consider less trivial examples - words that appear not only in the first corpus.
+
+Рассмотрим менее тривиальные примеры характерных слов (которые
+встречаются не только в Макбете):
+
+```{r}
+party.lemmas %>%
+    filter(republican >0) %>%
+    head(20) 
+```
+
+More frequent words are characterized by pmi:
+
+```{r}
+party.lemmas %>%
+    filter(democrat+republican> 50) %>%
+    filter(republican > 0) %>%
+    head(20)
+```
+
+What is happening with the most frequent words?
+
+```{r}
+party.lemmas %>%
+    arrange(desc(democrat+republican))
+```
+
+
+# Collocations
+
+
+Here we will again use the same data of presidents' speeches.
+
+Collocations is a term that denotes pairs of words that not only stand
+togther frequently, but their appearence next to each other is above
+the mere chance. That means, there is statistically significant
+association between these words.
+
+Everything that you would (and wouldn't) like to ask about
+collocations at [collocations.de](http://collocations.de).
+
+
+### Data for collocation statistics
+
+Basically, all collocation measurements are based on comparing three
+frequencies: that of word1, word2, and their co-occurrence.
+
+Data preparation: we will count all n-grams counting all words that
+stand not farther that 5 words apart. 
+
+```{r}
+bigrams <- sou %>% 
+  unnest_tokens(bigram, transcript, token = "ngrams", n = 2) %>%
+    select(date, president, bigram)
+
+bigram.nonstop <- bigrams %>% 
+  separate(bigram, c("word1", "word2"), sep = " ") %>% 
+  filter((!word1 %in% stopwords("en")) & (!word2 %in% stopwords("en"))) %>% 
+  mutate(lem1 = lemmatize_words(word1), lem2 = lemmatize_words(word2)) %>%
+  filter((! str_detect(lem1, "[0-9]+")) & (! str_detect(lem2, "[0-9]+")))
+
+
+```
+
+Co-occurrence frequencies.
+
+```{r}
+bifreq <-bigram.nonstop %>% 
+  dplyr::count(lem1, lem2, sort = TRUE)
+```
+
+Build an auxililary list of single-word (unigram) frequencies.
+
+```{r}
+unifreq <- sou %>%
+    unnest_tokens(word, transcript) %>%
+    mutate(lem=lemmatize_words(word)) %>%
+    filter(!word %in% stopwords("en")) %>%
+    filter(!str_detect(lem, "[0-9]+")) %>%
+    count(lem, sort = TRUE)
+```
+
+Join unigram frequency data to bigram frequency data. 
+
+```{r}
+ntotal <- sum(unifreq$n)
+
+freqjoined <- bifreq %>%
+    right_join(unifreq, by = c("lem1" = "lem"), suffix = c(".xy", ".x")) %>%
+    right_join(unifreq, by = c("lem2" = "lem")) %>%
+    mutate(n.y = n) %>% dplyr::select(-n) %>%
+    mutate(prop.x = n.x/ntotal, prop.y = n.y/ntotal, prop.xy = n.xy/ntotal)
+freqjoined
+```
+
+
+### logDice (== Jaccard Coefficient)
+
+An [article](https://nlp.fi.muni.cz/raslan/2008/raslan08.pdf) that motivates
+this collocation measure.  It is actually equivalent (perfectly correlated) to
+a simple Jaccard Coefficient. 
+
+A function that computes it given three frequencies.
+
+```{r}
+logDice <- function(f.xy, f.x, f.y) {
+    return(14 + log2( (2 * f.xy) / (f.x + f.y) ))
+}
+```
+
+Now we compute the logDice measure and rearrange the collocation
+candidates according to its value.
+
+```{r}
+freqjoined <- freqjoined %>%
+    mutate(logDice = logDice(n.xy, n.x, n.y)) %>%
+    arrange(-logDice) 
+freqjoined
+```
+
+Very rare words get highest scores if they only (or mostly) occur
+together, so we may wish to filter by frequency to get more general
+matches.
+
+```{r}
+freqjoined %>%
+    filter(n.xy > 50)
+```
+
+Words related to “people”
+
+```{r}
+freqjoined %>%
+    filter(lem2 == "person")
+```
+
+### PMI as a measure for collocations
+
+Pointwise mutual information — PMI = log2(p(x,y)/p(x)p(y))
+
+In NLP applications, PMI score is usually transformed into the PPMI (positive
+PMI), since negative values do not make much sense for word association
+measurements. 
+
+
+* p(x,y) — probability of meeting the word x and y together.
+* p(x) — probability of meeting the word x in the corpus.
+* p(y) — probability of meeting the word y in the corpus.
+
+PPMI = max(PMI, 0)
+
+```{r}
+ppmi <- function(f.xy, f.x, f.y) {
+   pmi <- log2((f.xy)/(f.x*f.y))
+   return(ifelse(pmi>0, pmi, 0)) 
+}
+```
+
+Now, what are the words associated with a given word of interest?
+
+```{r}
+freqjoined <- freqjoined %>%
+    mutate(ppmi = ppmi(prop.xy, prop.x, prop.y)) %>%
+    arrange(-ppmi)
+
+freqjoined
+```
+
+
+
+For example, collocations with the second word "person"
+
+
+```{r}
+freqjoined %>%
+      dplyr::filter(lem2 == "person") %>% head()
+```
+
+Again, in the top we have very rare words, let's cut them
+
+```{r}
+freqjoined %>%
+    arrange(-ppmi) %>%
+    filter(n.xy > 50)
+```
+
+
+NOTE: we can consider collocations as not only consecutive words, but words that 
+appear in some "window" (all n-grams counting all words that
+stand not farther that n words apart). This is called skip-gram. 
+You can do it with the same function "unnest_tokens", for ex, using arguments 
+" token = "skip_ngrams", n=2, k=5 ", will give 
+you all skipgrams consisted of two words that stand not farther that 5 words apart.
+
+
+
+## Limiting collocations with syntax
+
+(Not a task, just a note)
+
+Most of the time we are not interested in just any collocations, but
+in those that could characterize something more topical, and
+related to the content of the text. 
+
+Hence it is a good idea to filter collocation candidates based on some
+common syntactic patterns (Adjectice+Noun, and the like). To
+accomplish that, we need some NLP tools that give us Part of Speech
+tags and syntactic information.You can use UDpipe tool here again.
+
+## Note about G2:
+
+the correct function for G2 for calculating specificity
+
+```{r}
+# the correct version
+g2_new = function(a, b){
+  c = sum(a) - a
+  d = sum(b) - b
+  a.exp = ((a+b)*(a+c))/(a+b+c+d)
+  b.exp = ((a+b)*(b+d))/(a+b+c+d)
+  c.exp = ((c+d)*(a+c))/(a+b+c+d)
+  d.exp = ((c+d)*(b+d))/(a+b+c+d)
+  G2 = 2*(a*log(a/a.exp+1e-7) + b*log(b/b.exp+1e-7) + c*log(c/c.exp+1e-7) + d*log(d/d.exp+1e-7))
+}
+```
+
+
+
+
+## Task for you:
+
+1. Apply Dunning's logLikelihood (G2) as a collocation measure using
+   the data in the table `freqjoined`. You will need to define a
+   function that computes G2 given the three frequency values as
+   arguments (n.x, n.y, n.xy). NOTE: you need to write the different function here, because our data looks different.
+   
+
+```{r}
+g2 <- function() {
+    
+}
+```
+
+```{r}
+
+```
+
+
+2. Analyze the differences between the top-associated bigrams obtained
+   using logdice, G2, and PMI. What kinds of word associations do each of them 
+   systematically favor? How much are they correlated to each other?
+   What are the most crucial differences? (It's probably better to filter the data and cut very rare words)
+
+```{r}
+
+```
+
+
