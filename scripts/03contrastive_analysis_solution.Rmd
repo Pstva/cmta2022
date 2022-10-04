@@ -1,0 +1,270 @@
+---
+title: "03contrastive-analysis-solution.Rmd"
+author: "Alena Pestova"
+date: "2022-10-04"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## All preprocessing, calculations of g2, ipm, log-odds etc. (code from the practice)
+
+```{r}
+library(readr)
+sou <- read_csv("data/transcripts.csv")
+
+library(dplyr)
+democrats <- c("Woodrow Wilson", "Franklin D. Roosevelt", "Harry
+S. Truman", "John F. Kennedy", "Lyndon B. Johnson", "Jimmy Carter",
+"William J. Clinton", "Barack Obama")
+sou.democrats <- sou %>%
+    filter(president %in% democrats)
+sou.republicans <- sou %>%
+    filter(date > "1917-10-25" & !president %in% democrats)
+
+library(stopwords)
+library(tidytext)
+
+sou.long.dem <- sou.democrats %>%
+    unnest_tokens(words, transcript)
+
+freq.list.dem <- sou.long.dem %>% dplyr::count(words, sort=TRUE)
+
+enstopwords <- data.frame(words=stopwords("en"), stringsAsFactors=FALSE)
+freq.list.dem <- freq.list.dem %>%
+    anti_join(enstopwords)
+freq.list.dem <- freq.list.dem %>% mutate(n2 = n/sum(n))
+
+sou.long.rep <- sou.republicans %>%
+    unnest_tokens(words, transcript)
+
+freq.list.rep <- sou.long.rep %>% dplyr::count(words, sort=TRUE)
+
+freq.list.rep <- freq.list.rep %>%
+    anti_join(enstopwords)
+
+freq.list.rep <- freq.list.rep %>% mutate(n2 = n/sum(n))
+
+
+library(textstem)
+library(stringr)
+
+democrats.long <- sou.democrats %>%
+    unnest_tokens(word, transcript) %>%
+    mutate(lem = lemmatize_words(word)) %>%
+    filter(! lem %in% stopwords("en")) %>%
+    filter(! str_detect(lem, "[0-9]+")) %>%
+    mutate(party = "democrat")
+
+
+republicans.long <- sou.republicans %>%
+    unnest_tokens(word, transcript) %>%
+    mutate(lem = lemmatize_words(word)) %>%
+    filter(! lem %in% stopwords("en")) %>%
+    filter(! str_detect(lem, "[0-9]+")) %>%
+    mutate(party = "republican")
+
+
+library(tidyr)
+party.lemmas <- bind_rows(democrats.long, republicans.long) %>%
+    dplyr::count(lem, party) %>%
+    spread(party, n, fill = 0) %>%
+    dplyr::filter(democrat > 10 | republican > 10)
+
+
+# the number of all words (lemmas) in democrats speaches
+dem_num = sum(party.lemmas$democrat)
+# in republicans
+rep_num = sum(party.lemmas$republican)
+
+party.ipms <- party.lemmas
+party.ipms$democrat <- party.ipms $ democrat * ( 10e+6 / dem_num )
+party.ipms$republican <- party.ipms $ republican * ( 10e+6 / rep_num )
+
+# the correct version
+g2 = function(a, b){
+  c = sum(a) - a
+  d = sum(b) - b
+  a.exp = ((a+b)*(a+c))/(a+b+c+d)
+  b.exp = ((a+b)*(b+d))/(a+b+c+d)
+  c.exp = ((c+d)*(a+c))/(a+b+c+d)
+  d.exp = ((c+d)*(b+d))/(a+b+c+d)
+  G2 = 2*(a*log(a/a.exp+1e-7) + b*log(b/b.exp+1e-7) + c*log(c/c.exp+1e-7) + d*log(d/d.exp+1e-7))
+}
+
+party.g2 <- party.lemmas %>% 
+    mutate(g2=g2(democrat, republican)) %>%
+    arrange(desc(g2)) %>%
+    mutate(g2 = round(g2, 2))
+
+party.g2
+
+logratio <- function(a, b) {
+    return(log2((a/sum(a)/(b/sum(b)))))
+}
+
+party.lr <- party.g2 %>%
+    mutate(logodds = logratio(democrat, republican))
+
+party.disproportion <- party.lr %>%
+    dplyr::filter(democrat > 0 & republican > 0) %>%
+    group_by(logodds < 0) %>%
+    top_n(15, abs(logodds)) %>%
+    ungroup()
+```
+
+
+
+
+## Task for you:
+
+**1. Examine G2 values. Look at the top-30 most significant words for both parties. Draw the same graph as for log-odds. Compare two graphs.**
+
+We can take our calculated g2 metric and multiply it by one if the word is specific to republicans (for example). This multiplication is necessary only for a graph.  
+How can we define to which group word is specific to? We can use already calculated log-odds( logodds < 0 - specificity for republcans, logodds > 0 - specificity for democrats), or we can compare normalized frequencies in both parties (normalized by the corpus size or with IPM metric). 
+
+Here is an example with using logodds:
+
+```{r}
+party.lr$new_g2 <- ifelse(party.lr$logodds < 0, party.lr$g2 * -1, party.lr$g2)
+```
+
+```{r}
+library(ggplot2)
+
+party.lr %>%
+    filter(democrat > 0 & republican > 0) %>%
+    group_by(new_g2 < 0) %>%
+    top_n(15, abs(new_g2)) %>%
+    ungroup() %>%
+    mutate(lem = reorder(lem, new_g2)) %>%
+    ggplot(aes(lem, new_g2, fill = new_g2 < 0)) +
+    geom_col(show.legend = T) +
+    coord_flip() +
+    ylab("log odds ratio (Republicans/Democrats)") +
+    scale_fill_discrete(name = "", labels = c("Democrats", "Republicans"))
+```
+
+
+Example with using normalized frequencies (IPM normalization):
+
+```{r}
+# the number of all words (lemmas) in democrats and republicans speaches
+dem_num = sum(party.lr$democrat)
+rep_num = sum(party.lr$republican)
+
+party.lr$democrat_norm <- party.lr $ democrat * ( 10e+6 / dem_num )
+party.lr$republican_norm <- party.lr $ republican * ( 10e+6 / rep_num )
+
+party.lr$new_g2_v2 = ifelse(party.lr$democrat_norm < party.lr$republican_norm, party.lr$g2 * (-1), party.lr$g2)
+
+party.lr %>%
+    filter(democrat > 0 & republican > 0) %>%
+    group_by(new_g2_v2 < 0) %>%
+    top_n(15, abs(new_g2_v2)) %>%
+    ungroup() %>%
+    mutate(lem = reorder(lem, new_g2_v2)) %>%
+    ggplot(aes(lem, new_g2_v2, fill = new_g2_v2 < 0)) +
+    geom_col(show.legend = T) +
+    coord_flip() +
+    ylab("log odds ratio (Republicans/Democrats)") +
+    scale_fill_discrete(name = "", labels = c("Democrats", "Republicans"))
+```
+
+So, the graphs are similar. If we look at the values in two versions of calculating new g2, we will se that they are identical as well
+
+```{r}
+party.lr 
+```
+
+
+**2. Remember that G2 is the test statistic and you can calculate the statistical significance of the difference between word frequencies with it.  Statistically significant difference at the level 0.05 for 2 words in corpora can be found of you take G2 > 3.84. Define the words which are statistically significant different using this method. Then, draw the same graph for log-odds but only for the words that are significantly different. Is there a difference between this and the previous graph for log odds ratio?**
+
+```{r}
+data_filtered <- dplyr::filter(party.lr, g2 > 3.84)
+data_filtered %>% 
+  filter(democrat > 0 & republican > 0) %>%
+    group_by(logodds < 0) %>%
+    top_n(15, abs(logodds)) %>%
+    ungroup() %>%
+    mutate(lem = reorder(lem, logodds)) %>%
+    ggplot(aes(lem, logodds, fill = logodds > 0)) +
+    geom_col(show.legend = FALSE) +
+    coord_flip() +
+    ylab("log odds ratio (Democrats/Republicans)") +
+    scale_fill_discrete(name = "", labels = c("Democrats", "Republicans"))
+```
+
+Just filtering row with the value of g2 more than 3.84 and plotting.
+
+Here the graph is the same as the graph from the practice because top-words by absolute values of log-odds have big values of g2  as well. But if we compare the datasets, we will see that some amount of words were dropped.
+
+original data
+```{r}
+nrow(party.lr)
+```
+
+
+```{r}
+nrow(data_filtered)
+```
+
+So we see that we dropped about 1900 words for which the difference were not statistically significant on the level of significance 0.05.
+
+
+**3. Work with PMI table. Calculate the frequency ratio for both parties (first slides of the lecture). Use different n (1, 100, 1000, 10000) as a constant that you add to frequencies and compare the results (the top words for each party). Draw the distributions of the ratios for each n.**
+
+Caclulating ratios. Here we add different n as a constant to the IPM frequencies.
+
+ratio = (democrat+n) / (republican + n)
+
+
+```{r}
+party.ipms <- party.ipms %>%
+  mutate(ratio1 = (democrat+1)/(republican+1)) %>%
+  mutate(ratio100 = (democrat+100)/(republican+100)) %>%
+  mutate(ratio1000 = (democrat+1000)/(republican+1000)) %>%
+  mutate(ratio10000 = (democrat+10000)/(republican+10000))
+```
+
+
+Drawing distributions
+
+```{r}
+ggplot()+
+  geom_histogram(data=party.ipms, aes(ratio1), fill='light blue', col='blue')+
+  ggtitle('ratio = (democrat+1) / (republican + 1)')
+```
+
+```{r}
+ggplot()+
+  geom_histogram(data=party.ipms, aes(ratio100), fill='light blue', col='blue')+
+  ggtitle('ratio = (democrat+100) / (republican + 100)')
+```
+
+```{r}
+ggplot()+
+  geom_histogram(data=party.ipms, aes(ratio1000), fill='light blue', col='blue')+
+  ggtitle('ratio = (democrat+1000) / (republican + 1000)')
+```
+
+```{r}
+ggplot()+
+  geom_histogram(data=party.ipms, aes(ratio10000), fill='light blue', col='blue')+
+  ggtitle('ratio = (democrat+10000) / (republican + 10000)')
+```
+
+
+
+What can we see here? With the increase of n:
++ range of ratios decreases
++ all ratios became more and more similar. They all go to 1.
+
+
+With small n, there are some very big ratios that appear because of less frequent words (and words that appear only in one corpus). And it can be a problem (we have artificially inflated ratios for less frequent words). On the other side, with the very big n, all ratios become similar - this is also not we wanted from them because we want to use it as a measure for word specificity, but if all ratios are almost equal, this measure has no sense.
+
+So, if you use this measure for extracting word specificity,  you need to look for the suitable n, based on the task and possibly based on some subjective assessments.
+
+
