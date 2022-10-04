@@ -76,60 +76,24 @@
     \end{itemize}
 \end{frame}
 
-\begin{frame}[fragile]
-  \frametitle{Document Vector Representation}
-  \small
-  \begin{block}{}
-    - Мне, пожалуйста, двойной виски. - Девочка! Это школьная
-    столовая! - Ой, извините, я задумалась. Компот, пожалуйста...
-  \end{block}
-  \footnotesize
-\begin{verbatim}
-виски    двойной    девочка задумалась   извините
-    1          1          1          1          1
-компот        мне   пожалуйста     столовая     школьн
-     1          1            2            1          1
-это
-  1
-\end{verbatim}
-\end{frame}
+%\begin{frame}[fragile]
+%  \frametitle{Document Vector Representation}
+%  \small
+%  \begin{block}{}
+%    - Мне, пожалуйста, двойной виски. - Девочка! Это школьная
+%    столовая! - Ой, извините, я задумалась. Компот, пожалуйста...
+%  \end{block}
+%  \footnotesize
+%\begin{verbatim}
+%виски    двойной    девочка задумалась   извините
+%    1          1          1          1          1
+%компот        мне   пожалуйста     столовая     школьн
+%     1          1            2            1          1
+%это
+%  1
+%\end{verbatim}
+%\end{frame}
 
-%\subsection{Vectors in multidimensional space}
-%
-%\begin{frame}
-%  \frametitle{Вектор}
-%  \begin{columns}
-%    \column{.5\textwidth}
-%    \begin{tabular}{ccc}
-%      \only<2->{ russian & maths & physics \\
-%        \hline}
-%      90 & 60 & 90 \\
-%      \only<3->{
-%        95 & 65 & 95 \\
-%        67 & 98 & 100 \\
-%      }
-%    \end{tabular}
-%    \column{.5\textwidth}
-%\only<4>{
-%    \includegraphics[width=\textwidth]{vectors0}
-%}
-%  \end{columns}
-%\end{frame}
-%
-%\begin{frame}
-%  \frametitle{Similarity of vectors: Euclidean distance}
-%  \includegraphics[height=.9\textheight]{vectors1}
-%\end{frame}
-%
-%\begin{frame}
-%  \frametitle{Similarity of vectors: cosine distance}
-%\only<1>{
-%  \includegraphics[height=.9\textheight]{vectors2}
-%}
-%\only<2>{
-%  \includegraphics[height=.9\textheight]{vectors3}
-%}
-%\end{frame}
 
 \begin{frame}
   \frametitle{Measures of distance}
@@ -171,14 +135,6 @@ Docs вовочк дет класс урок учител учительниц �
    \end{itemize}
 \end{frame}
 
-\begin{frame}{Document frequency}
-    \begin{itemize}
-  \item We can just take the document frequency of each word and put to the matrix
-  \item The problem - the length of documents varies greatly
-  \item The second problem - not all words characterize the document (stop-words and just common words)
-
-\end{itemize}
-    \end{frame}
 
 \begin{frame}{Vocabulary}
   By defining a fixed dictionary, we define the features , within which our
@@ -207,6 +163,14 @@ Docs вовочк дет класс урок учител учительниц �
 \end{frame}
 
 
+\begin{frame}{Document frequency}
+    \begin{itemize}
+  \item We can just take the document frequency of each word and put to the matrix
+  \item The problem - the length of documents varies greatly
+  \item The second problem - not all words characterize the document (stop-words and just common words)
+
+\end{itemize}
+    \end{frame}
 
 \begin{frame}
   \frametitle{IDF: inverse document frequency}
@@ -221,7 +185,7 @@ Docs вовочк дет класс урок учител учительниц �
 \end{frame}
 
 \begin{frame}
-  \frametitle{IDF: примеры}
+  \frametitle{IDF: examples}
   \begin{tabular}[l]{lccc}
     распределение & D & df & IDF \\
     \hline
@@ -275,21 +239,6 @@ Docs вовочк дет класс урок учител учительниц �
   \end{itemize}
 \end{frame}
 
-%\begin{frame}[fragile]
-%  \frametitle{Normalizing by text lengr}
-%  Нормализация: разделить каждое значение на количество слов в документе
-%  \footnotesize
-%\begin{verbatim}
-%    Terms
-%Docs    вовочк       дет класс      урок учител учительниц школ
-%   1 0.5000000 0.0000000     0 0.2500000      0  0.2500000  0.0
-%   2 0.6666667 0.0000000     0 0.0000000      0  0.3333333  0.0
-%   3 0.2000000 0.2000000     0 0.0000000      0  0.2000000  0.4
-%   4 0.5000000 0.1666667     0 0.1666667      0  0.1666667  0.0
-%   5 0.7500000 0.0000000     0 0.0000000      0  0.2500000  0.0
-%   6 0.5000000 0.0000000     0 0.0000000      0  0.5000000  0.0
-%\end{verbatim}
-%\end{frame}
 
 \begin{frame}[fragile]
   \frametitle{TF-IDF}
@@ -320,16 +269,6 @@ Docs    вовочк       дет класс      урок учител учит
 4 0.1226977 0.17479311 0.3369433 0.0000000 0.16449672
 5 0.1255223 0.01232358 0.5300903 0.1644967 0.00000000
 \end{verbatim}
-
-%  \footnotesize
-%\begin{verbatim}
-%Docs вовочк дет класс урок учител учительниц школ
-%   1      2   0     0    1      0          1    0
-%   2      2   0     0    0      0          1    0
-%   3      1   1     0    0      0          1    2
-%   4      3   1     0    1      0          1    0
-%   5      3   0     0    0      0          1    0
-%\end{verbatim}
 
 \end{frame}
 

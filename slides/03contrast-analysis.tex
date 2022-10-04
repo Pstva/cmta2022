@@ -323,11 +323,49 @@ $$
     = \frac{\frac{4}{46804371}}{\frac{121}{46804371}} = \frac{4}{121} = 0.033$$
 \end{frame}
 
+%\begin{frame}
+%  \frametitle{Pointwise mutual information}
+%  \begin{columns}
+%    \column{.5\textwidth}
+%    PMI: draws on the intuition that the best way to weigh the association between two words is to ask how much more
+%    the two words co-occur in a corpus than we would have a expected them to appear by chance.
+%
+%    A measure of word association
+%
+%    Is symmetric $pmi(x, y) = p(y, x)$
+%
+%  $$
+%  pmi(x;y) = log \frac{p(x,y)}{p(x)p(y)} =
+%  $$
+%  $$
+%  = log \frac{p(x|y)}{p(x)} =
+%  $$
+%  $$
+%  = log \frac{p(y|x)}{p(y)}
+%  $$
+%
+%  Positive PMI (negative values do not make much sense for word association measurements)
+%
+%    $$
+%    ppmi(x;y) = max(pmi(x;y),0)
+%    $$
+%    \column{.5\textwidth}
+%  \includegraphics[width=\textwidth]{log}
+%  \end{columns}
+%\end{frame}
+
 \begin{frame}
   \frametitle{Pointwise mutual information}
+
+
+    PMI: draws on the intuition that the best way to weigh the association between two words is to ask how much more
+    the two words co-occur in a corpus than we would have a expected them to appear by chance.
+
+    A measure of word association
+
+    Is symmetric $pmi(x, y) = p(y, x)$
   \begin{columns}
     \column{.5\textwidth}
-    PMI
 
   $$
   pmi(x;y) = log \frac{p(x,y)}{p(x)p(y)} =
@@ -338,15 +376,19 @@ $$
   $$
   = log \frac{p(y|x)}{p(y)}
   $$
+    
+    \column{.5\textwidth}
+  \includegraphics[width=\textwidth]{log}
+  \end{columns}
+\end{frame}
 
-  Positive PMI (negative values do not make much sense for word association measurements)
+
+\begin{frame}
+    Positive PMI (negative values do not make much sense for word association measurements)
 
     $$
     ppmi(x;y) = max(pmi(x;y),0)
     $$
-    \column{.5\textwidth}
-  \includegraphics[width=\textwidth]{log}
-  \end{columns}
 \end{frame}
 
 \begin{frame}
@@ -367,6 +409,8 @@ $$
 
 \begin{frame}{Contrastive analysis}
   We have seen how to calculate metrics for contrastive analysis with g2 and log-odds. Let's use PMI for the same thing.
+  Note: there is no such kind of symmetry here: "pmi(x, first corpus) != pmi(x, second corpus)" and "pmi(x, first corpus) != pmi(x, second corpus)"
+  There is only summetry: "pmi(x, y) = pmi(y, x)"
   \begin{tabular}[l]{lcc}
     word & fc & rc \\
     \hline
@@ -389,16 +433,17 @@ $$
     bigram & word1 freq & word2 freq & bigram freq \\
     \hline
     united states & 200 & 100 & 50\\
-    all other bigrams & 10000 & 10000 & ...\\
+    all other bigrams & 10000 & 10000 & 9000\\
   \end{tabular}
     \begin{itemize}
   \item $x$ - meeting the word "united" in the corpus
   \item $y$ - meeting the word "states" in the corpus
-  \item $p(x)=200/10000 = 0.02$ - probability of meeting the word "united"
-  \item $p(x|y) = 50/1000=0.05$ - probability of meeting the word "united" together with the word "states"
+  \item $p(x)=200/10200 = 0.0196$ - probability of meeting the word "united" (count of this word divided by the corpus size)
+  \item $p(y) = 100/10200=0.0098$ - probability of meeting the word "states"
+      \item $p(x, y) = 50/9000=0.0056$ - probability of bigram consisted of words x and y (bigram count divided by the total number of bigrams)
     \end{itemize}
 
-  $$pmi(x;y) = log \frac{p(x|y)}{p(x)} $$
+  $$pmi(x;y) = log \frac{p(x,y)}{p(x)p(y)} = log \frac{0.0056}{0.0196 * 0.0098} = 4.8656$$
 
 \end{frame}
 
