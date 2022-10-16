@@ -1,0 +1,355 @@
+---
+title: "Vector space model and classification"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Sentiment analysis
+
+We will work with the data: https://www.kaggle.com/datasets/ishantjuyal/emotions-in-text/code
+
+One observation is one short sentence that represents some emotion. For each sentence we have information about its target class - emotion represented in it.
+
+## Plan is the following:
+
++ loading and preprocessing the data
++ preparing the data for classification
++ look at how we can calculate distances between the documents and find similar documents
++ using naive bayes method for classification
++ evaluating model performance
++ analysis of the most significant predictors
+
+Note: the data used in this practice is quite clean and almost prepared for future processing. In your homework, you may need to work on preprocessing more before going to the classification.
+
+## Loading the data
+
+
+```{r}
+library(readr)
+data <- read_csv("data/Emotion_final.csv")
+```
+
+
+
+Let's look on our data:
+
+```{r}
+head(data)
+```
+
+
+Distribution of class variable:
+
+```{r}
+table(data$Emotion)
+```
+
+
+Let's simplify our task and select only two opposite classes - *happy* and *sadness*
+
+
+```{r}
+library(dplyr)
+library(stringr)
+
+data <- data %>% filter(Emotion == 'happy' | Emotion == 'sadness')
+```
+
+
+Now we have only two classes. So, we will have a task for binary classification.
+
+```{r}
+table(data$Emotion)
+```
+
+Note that classes are represented almost equally in our data, so we do not need to take care of class balance.
+
+
+## Text Preprocessing
+
+Preprocessing is a very important step in text classification task. 
+You can increase/decrease results of your model dramatically when changing methods of preprocessing. 
+
+You need to choose preprocessing methods specifically for your task, so you should think carefully about lemmatization, tokenization type, converting to lower case. dropping stop-words/punctuation/digits/smiles etc.  
+
+As it was written earlier, our data is already quite clean. Actually, this data is not very natural - it is lower case, there is no punctuation etc.
+So, here we will only tokenize and lemmatize all the words. 
+
+Just in case, we will write the removal of punctuation and digits, though I believe there are no such tokens in the texts. 
+
+What is more, stopwords seem to be useless here, so we will drop them (this will also help us to decrease the number of features).
+However, this is not always necessary, you should think about dropping/not dropping stop-words for your particular task.
+
+
+doc id column for the opportunity to distinguish docs in the future
+
+```{r}
+data <- data %>% mutate(doc_id = row_number())
+```
+
+
+
+```{r}
+library(textstem)
+library(tidytext)
+library(stopwords)
+
+data_lemmas <- data %>%
+    unnest_tokens(word, Text) %>%
+    mutate(lem = lemmatize_words(word)) %>%
+    filter(! lem %in% stopwords("en")) %>%
+    filter(! str_detect(lem, "[0-9]+"))
+```
+
+
+
+```{r}
+data_lemmas
+```
+
+
+Vocabulary size: 
+
+```{r}
+data_lemmas %>% distinct(lem) %>% nrow
+```
+
+## Creating document-term matrix
+
+Let's create document-term matrix:
+
+first, calculate lemmas frequency in docs
+
+
+```{r}
+lem_count <- data_lemmas%>% count(lem, doc_id, sort=TRUE)
+```
+
+Calculate TF-IDF.
+
+```{r}
+library(tidytext)
+tfidf <- lem_count %>%
+    bind_tf_idf(lem, doc_id, n)
+tfidf
+```
+
+Let's drop the words with zero TF-IDF and build the doc-term matrix.
+
+```{r}
+tfidf %>% filter(tf_idf<=0)
+```
+
+
+Okay, we do not have words with null tf-idf (may be there will be such words if we do not delete stop-words)
+
+
+Build the doc-term matrix - we will build the sparse matrix (this is just more optimized way for representing the matrix with many zeros). 
+We can do it with the funciton tidytext::cast_dfm
+
+
+```{r}
+dfm <- tfidf %>% 
+    cast_dfm(doc_id, lem, tf_idf)
+
+dfm
+```
+
+We could build similar matrix but with the frequencies as values (just changing the third argument to the column which we want use for filling values in the matrix):
+
+```{r}
+tfidf %>% 
+    cast_dfm(doc_id, lem, n)
+```
+
+
+
+We can filter our data somehow before building document-term matrix. 
+
+For example, we may want to filter the columns by TF (term-frequency) - drop the words which appear in all docs less/more than some N (just count of the word in total)
+Or we may wan to filter the columns by DF (document-frequency) - drop the words which appear in more/less docs than some N (count the number of docs where the word appear)
+
+
+
+```{r}
+library(quanteda)
+dfm <- tfidf %>%
+    filter(tf_idf>0) %>%
+    cast_dfm(doc_id, lem, n) %>% # building matrix with frequencies as values! not tf-idf
+    dfm_trim(min_termfreq=1, termfreq_type="count") %>% #each word should appear at least 1 timw
+    dfm_trim(min_docfreq=0.005, docfreq_type="prop") %>% #each word should appear at least in 0.5 % of docs
+    dfm_tfidf # now converting to tf-idf doc-term matrix
+```
+
+## Distances between the documents
+
+Let's calculate cosine distances between the documents:
+
+(this will give you a large and heavy matrix with pair-wise cosine similarities)
+
+```{r}
+#install.packages('quanteda.textstats')
+library(quanteda.textstats)
+d <- textstat_simil(dfm, method="cosine", margin="documents")
+
+# similarity of doc 1000 and doc 1001
+d[1000, 1001]
+
+# similarity of doc 1001 and doc 1001
+# equals to 1, as we expect - this is cosine similarity between the document and the same document (between equal vectors)
+d[1001, 1001]
+```
+These distances can be used, for example, for finding the most similar documents, or for clusterization.
+
+
+
+## Text Classification
+
+### Naive Bayes
+In this example we will use count data for training the model (not tf-idf).
+For some other algorithms, it may be better to use tf-idf features (you may also try tf-idf with bayes classifier)
+
+
+```{r}
+dfm_count <- tfidf %>%
+    filter(tf_idf>0) %>%
+    cast_dfm(doc_id, lem, n) %>% # building matrix with frequencies as values! not tf-idf
+    dfm_trim(min_termfreq=1, termfreq_type="count") %>% #each word should appear at least 1 timw
+    dfm_trim(min_docfreq=0.005, docfreq_type="prop")
+```
+
+
+### Splitting the data into train and test sets
+
+Note: there is no hyperparameters in Naive Bayes algorithm and we do not need to tune them. So we will just train on train set and test final model on test set.
+If you use some other model (for ex, Logistic Regression), you may need to split your data into train, validation and test sets, and tune hyperparameters (regularization coefficient, for ex) on validation set. Or, you can use cross-validation.
+
+
+```{r}
+# target variable for our data
+# in dfm matrix doc ids are shuffled, so we select target classes according the order of doc ids in dfm matrix
+emotion_labels <- data$Emotion[as.integer(rownames(dfm_count))]
+```
+
+
+```{r}
+#install.packages('caret')
+library(caret)
+set.seed(1991)
+## we will take 10% of the sample for testinf
+split <- createDataPartition(y=emotion_labels, p = 0.9, list = FALSE)
+train.data <- dfm_count %>% dfm_subset(rownames(dfm) %in% rownames(dfm_count)[split])
+test.data <- dfm_count %>% dfm_subset(!rownames(dfm) %in% rownames(dfm_count)[split]) 
+
+response <- as.factor(emotion_labels)
+trainY <- response[split]
+testY <- response[-split]
+```
+
+
+Naive Bayes can only use the words that appear in train set during the prediction. So, let's restrict the vocabulary of test set with the words that appear in train set. We can do it with the function
+quanteda::dfm_match.
+
+```{r}
+test.matched <- test.data %>% 
+    dfm_match(features = featnames(train.data))
+```
+
+### Training the model
+
+Using the function from the package quanteda.textmodels.
+
+```{r}
+#install.packages('quanteda.textmodels')
+# here multinomial stands for the multinomial distribution of features - in other words,
+# our features are represented as discrete numbers (counts). We can use also Bernoulli distribution
+# for binary features - in this case we need to convert our features to 0/1 (0-no such word in the doc, 1-word is in the doc)
+library(quanteda.textmodels)
+model.nb <- textmodel_nb(train.data, trainY, distribution = "multinomial")
+summary(model.nb)
+```
+
+
+### Predicting class for the docs from test set
+
+```{r}
+predictedY <- predict(model.nb, newdata = test.matched)
+```
+
+```{r}
+#probabilities
+predicted.prob <- round(predict(model.nb, newdata = test.matched, type = "prob"), 2)
+```
+
+### Evaluating model performance
+
+```{r}
+cm.nb <- confusionMatrix(data = predictedY, reference = testY, positive="happy", mode = "prec_recall")
+cm.nb
+```
+
+
+### Anasyis of predictors
+
+The Bayesian classifier calculates the conditional probabilities of each word for each class (P(word|happy) and P(word|sadness)). We can directly use these probabilities to estimate the most significant predictors among words (those with the most skew between classes).
+
+Actually, we can use classifier not for classification itself, but for extracting the most important predictors to each class. This is similar to the task of contrastive analysis and calculating specificity of some word to some group.
+
+```{r}
+library(tibble)
+# calculating log-odds
+vars.nb <- t(model.nb$param) %>% 
+    as.data.frame %>% 
+    rownames_to_column("word") %>% 
+    mutate(lo = log(happy/sadness))
+```
+
+Most important predictors for class "happy"
+```{r}
+vars.nb %>% arrange(desc(lo))
+```
+
+
+Most important predictors for class "sadness"
+```{r}
+vars.nb %>% arrange(lo)
+```
+
+### Looking at the errors
+
+We may want to look at the examples where our model works not correctly
+
+
+```{r}
+
+predictions <- data.frame(doc_id=as.integer(rownames(predicted.prob)))
+predictions$pred_y <- predictedY
+predictions$happy_prob_pred <- predicted.prob[,1]
+predictions$sadness_prob_pred <- predicted.prob[,2]
+predictions$true_label <- data[rownames(predicted.prob),]$Emotion
+predictions$text <- data[rownames(predicted.prob),]$Text
+
+predictions
+```
+
+Wrongly predicted sad texts:
+
+
+```{r}
+predictions %>% filter(pred_y == 'happy' & true_label == 'sadness')
+```
+
+Wrongly predicted happy texts:
+
+
+```{r}
+predictions %>% filter(pred_y == 'sadness' & true_label == 'happy')
+```
+
+
+
+Note: You may use some other package and functions for classification (for example, caret package).
+
