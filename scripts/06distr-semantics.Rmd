@@ -1,0 +1,144 @@
+---
+title: "Distributional semantics"
+author: "Alena Pestova"
+date: "2022-11-03"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(readr)
+library(dplyr)
+library(ggplot2)
+```
+
+
+Today we will look at simple way how we can get word vector representations with LSA method and simple examples how we can use them.
+
+### Data
+
+We will use the same data with emotions as in the previous practice (https://www.kaggle.com/datasets/ishantjuyal/emotions-in-text/code). 
+We will use all the texts from it. Emotion column is not necessary today.
+
+```{r}
+data <- read_csv("data/Emotion_final.csv") %>% select(-Emotion)
+
+
+data <-read_csv('data/transcripts.csv') %>% select(transcript)
+```
+
+Note: maybe it would be better if we divide big speeches to distince sentences, then words would be counted as co-occurent only if they appear in one sentence.
+
+
+
+
+
+
+and let's create doc id column
+
+```{r}
+data <- data %>% mutate(doc_id = row_number())
+```
+
+
+### Basic Text Preprocessing
+
+
+```{r}
+library(tidytext)
+library(stopwords)
+library(stringr)
+```
+
+Standard decisions: tokenize, remove stopwords and numbers.
+
+```{r}
+library(textstem)
+
+data.long <- data %>%
+    unnest_tokens(word, transcript) %>%
+    filter(! word %in% stopwords("en")) %>%
+    filter(! str_detect(word, "[0-9]+")) %>% 
+    mutate(lem = lemmatize_words(word))
+```
+
+Use sentences as documents, lemmatize and build document-term matrix (just for now we will use just frequencies as the data)
+
+```{r}
+library(quanteda)
+dtm.count <- data.long %>%
+    count(doc_id, lem) %>%
+    cast_dfm(doc_id, lem, n)
+
+dtm.count
+```
+
+### Latent Semantic Analysis (LSA)
+
+LSA is a technique for dimensionality reduction based on the idea of
+applying trimmed Singular Value Decomposition to the term-document matrix.
+
+```{r eval=FALSE}
+#install.packages("lsa")
+#install.packages("text2vec")
+```
+
+We first create an LSA space with 100 dimensions for document-term
+matrix, and then for term-document matrix. The former allows us to
+compare documents in this lower-dimensional space, and the latter is
+for comparing words to each other. You can use other dimension, not only 100.
+
+
+```{r}
+library(text2vec)
+lsa.50 = LSA$new(n_topics = 50)
+
+# this can be used for compring docs, doc clusterization, doc classification  etc. (as usual dtm matrix)
+# (docs vector representations)
+dtm.lsa100 = fit_transform(dtm.count, lsa.50)
+
+# this can be used for comparing words (words vector representations)
+tdm.lsa100 = fit_transform(t(dtm.count), lsa.50)
+```
+
+
+### Word similarity
+
+Let's compare term associations: in the original vector space, and in
+the LSA-transformed space.
+
+For this comparison, we now build another similarity matrix (all words
+compared to all others) based on raw co-occurrence data.
+
+```{r}
+# converting dtm matrix to the format of lsa package
+tdm.raw <- convert(dtm.count, to='lsa')
+```
+
+Words similar to America (appear together in similar contexts):
+
+```{r}
+library(lsa)
+associate(tdm.raw, "america", threshold=0.5) %>% head(10)
+associate(tdm.lsa100, "america", threshold=0.5) %>% head(10)
+```
+
+Words similar to money:
+
+```{r}
+library(lsa)
+associate(tdm.raw, "money", threshold=0.5) %>% head(10)
+associate(tdm.lsa100, "money", threshold=0.5) %>% head(10)
+```
+
+## Task for you:
+
+1) Compare differences in the lists of most similar words
+in the raw and LSA-transformed vectors with a couple of words of your
+choice. 
+
+2) Use tf-idf document-term matrix instead of matrix with counts for constructing LSA matrices.
+Compare the most similar words returned with your new model to the previous results.

@@ -63,6 +63,8 @@ Now we have only two classes. So, we will have a task for binary classification.
 
 ```{r}
 table(data$Emotion)
+
+data
 ```
 
 Note that classes are represented almost equally in our data, so we do not need to take care of class balance.
@@ -88,6 +90,8 @@ doc id column for the opportunity to distinguish docs in the future
 
 ```{r}
 data <- data %>% mutate(doc_id = row_number())
+
+data
 ```
 
 
@@ -126,7 +130,9 @@ first, calculate lemmas frequency in docs
 
 ```{r}
 lem_count <- data_lemmas%>% count(lem, doc_id, sort=TRUE)
+lem_count
 ```
+
 
 Calculate TF-IDF.
 
@@ -137,11 +143,6 @@ tfidf <- lem_count %>%
 tfidf
 ```
 
-Let's drop the words with zero TF-IDF and build the doc-term matrix.
-
-```{r}
-tfidf %>% filter(tf_idf<=0)
-```
 
 
 Okay, we do not have words with null tf-idf (may be there will be such words if we do not delete stop-words)
@@ -177,11 +178,13 @@ Or we may wan to filter the columns by DF (document-frequency) - drop the words 
 ```{r}
 library(quanteda)
 dfm <- tfidf %>%
-    filter(tf_idf>0) %>%
+#    filter(tf_idf>0) %>%
     cast_dfm(doc_id, lem, n) %>% # building matrix with frequencies as values! not tf-idf
     dfm_trim(min_termfreq=1, termfreq_type="count") %>% #each word should appear at least 1 timw
     dfm_trim(min_docfreq=0.005, docfreq_type="prop") %>% #each word should appear at least in 0.5 % of docs
     dfm_tfidf # now converting to tf-idf doc-term matrix
+
+dfm
 ```
 
 ## Distances between the documents
@@ -219,6 +222,8 @@ dfm_count <- tfidf %>%
     cast_dfm(doc_id, lem, n) %>% # building matrix with frequencies as values! not tf-idf
     dfm_trim(min_termfreq=1, termfreq_type="count") %>% #each word should appear at least 1 timw
     dfm_trim(min_docfreq=0.005, docfreq_type="prop")
+
+dfm_count
 ```
 
 
@@ -231,6 +236,9 @@ If you use some other model (for ex, Logistic Regression), you may need to split
 ```{r}
 # target variable for our data
 # in dfm matrix doc ids are shuffled, so we select target classes according the order of doc ids in dfm matrix
+
+dfm_count
+
 emotion_labels <- data$Emotion[as.integer(rownames(dfm_count))]
 ```
 
@@ -238,9 +246,10 @@ emotion_labels <- data$Emotion[as.integer(rownames(dfm_count))]
 ```{r}
 #install.packages('caret')
 library(caret)
-set.seed(1991)
+set.seed(19987)
 ## we will take 10% of the sample for testinf
 split <- createDataPartition(y=emotion_labels, p = 0.9, list = FALSE)
+
 train.data <- dfm_count %>% dfm_subset(rownames(dfm) %in% rownames(dfm_count)[split])
 test.data <- dfm_count %>% dfm_subset(!rownames(dfm) %in% rownames(dfm_count)[split]) 
 
@@ -299,6 +308,9 @@ The Bayesian classifier calculates the conditional probabilities of each word fo
 Actually, we can use classifier not for classification itself, but for extracting the most important predictors to each class. This is similar to the task of contrastive analysis and calculating specificity of some word to some group.
 
 ```{r}
+
+t(model.nb$param)
+
 library(tibble)
 # calculating log-odds
 vars.nb <- t(model.nb$param) %>% 
@@ -326,6 +338,8 @@ We may want to look at the examples where our model works not correctly
 ```{r}
 
 predictions <- data.frame(doc_id=as.integer(rownames(predicted.prob)))
+
+
 predictions$pred_y <- predictedY
 predictions$happy_prob_pred <- predicted.prob[,1]
 predictions$sadness_prob_pred <- predicted.prob[,2]
