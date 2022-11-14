@@ -1,0 +1,114 @@
+---
+title: Word embeddings. Playground
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Installation of wordVectors: see Quick start in https://github.com/bmschmidt/wordVectors.
+Also, read the docs, there are descriptions of useful functions, 
+that can help you to work with pretrained word embeddings and there is a guide how to train your own word2vec model.
+
+```{r}
+#install.packages("devtools")
+#devtools::install_github("bmschmidt/wordVectors")
+```
+
+```{r}
+library(magrittr)
+library(wordVectors)
+```
+
+## LOAD WORD VECTORS
+Here you can put any pretrained word2vec model. For example, from the site: 
+https://rusvectores.org/ru/models/ (for russian). 
+
+Please note that this table contains information about :
++ which corpus was used to train the model (and the info about the corpus)
++ how the lemmatization was done (there can also different tags within the words, the format can be known from the column Tagset)
++ the model type and window size
+
+Let's, for example, load the vectors 'ruscorpora_upos_skipgram_300_5_2018'
+
+```{r}
+vectors <- read.vectors("data/ruscorpora_upos_skipgram_300_5_2018.vec", binary=FALSE)
+```
+
+Note: the value of argument 'binary' depends on the file format of loaded embeddings. 
+Usually, if the extension of file is '.bin', then you need to specify binary=TRUE, if the extension is '.vec' - then binary=FALSE. 
+Anyway, information about whether you load binary or not binary file is usually written somewhere in the source of the word vectors. 
+
+let's look at the examples of words in this loaded word embeddings:
+
+```{r}
+# first 10 rows
+rownames(vectors@.Data)[0:10]
+```
+
+Tagset in this word embeddings is Universal Tags (see the table), here are the description of the tags: https://universaldependencies.org/u/pos/all.html
+
+So, all our words look like: word_POStag.
+
+Now, let's look at the examples of simple operations with word vectors
+
+## search in the vicinity of a given word
+
+```{r}
+vectors %>% closest_to("плакать_VERB")
+vectors %>% closest_to("слеза_NOUN")
+```
+
+## adding and plotting
+
+```{r}
+crying <- vectors %>% closest_to(~"плакать_VERB" + "слеза_NOUN", 75)
+vectors[[crying$word, average=F]] %>% plot(method="pca")
+```
+
+## adding and subtracting meanings
+
+```{r}
+vectors %>% closest_to("хороший_ADJ",30)
+vectors %>% closest_to("плохой_ADJ",30)
+vectors %>% closest_to(~"хороший_ADJ"+"плохой_ADJ",30)
+vectors %>% closest_to(~"хороший_ADJ"-"плохой_ADJ",30)
+vectors %>% closest_to(~"плохой_ADJ"-"хороший_ADJ",30)
+```
+
+## vectors %>% closest_to(~"king" - "man" + "woman")
+
+```{r}
+vectors %>% closest_to("москва_NOUN")
+vectors %>% closest_to(~"москва_NOUN" - "россия_NOUN" + "грузия_NOUN")
+```
+
+
+## semantic “dimensions”
+
+```{r}
+vectors[[c("тетя_NOUN","дядя_NOUN","брат_NOUN","сестра_NOUN","бабушка_NOUN","дедушка_NOUN","муж_NOUN","жена_NOUN"), average=F]] %>% plot(method="pca") 
+```
+
+##
+```{r}
+top_evaluative_words <- vectors %>% closest_to(~"хорошо_ADV"+"плохо_ADV", n=75)
+goodness <- vectors %>% closest_to(~"хорошо_ADV"-"плохо_ADV",n=Inf)
+eat <- vectors %>% closest_to(~"съедать_VERB" - "выпивать_VERB",n=Inf)
+```
+
+```{r}
+library(dplyr)
+library(ggplot2)
+top_evaluative_words %>%
+    inner_join(goodness) %>%
+    inner_join(eat) %>%
+    ggplot() + geom_text(aes(x=`similarity to "съедать_VERB" - "выпивать_VERB"`, y=`similarity to "хорошо_ADV" - "плохо_ADV"`,label=word))
+```
+
+
+##
+
+You can try to find top-similar words for some other words. 
+Or you can find some similar relationships between word vectors as "king" - "man" + "woman".

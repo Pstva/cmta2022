@@ -1,0 +1,134 @@
+---
+title: Word embeddings. Playground
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Installation of wordVectors: see Quick start in https://github.com/bmschmidt/wordVectors.
+Also, read the docs, there are descriptions of useful functions, 
+that can help you to work with pretrained word embeddings and there is a guide how to train your own word2vec model.
+
+```{r}
+#install.packages("devtools")
+#devtools::install_github("bmschmidt/wordVectors")
+```
+
+```{r}
+library(magrittr)
+library(wordVectors)
+```
+
+## LOAD WORD VECTORS
+
+Here you can put any pretrained word2vec model. 
+There are many different pretrained models available in the internet. 
+For example, there are models trained on English fiction (https://nlp.stanford.edu/projects/histwords/), 
+on Wikipedia (https://wikipedia2vec.github.io/wikipedia2vec/pretrained/),
+on Google news: https://code.google.com/archive/p/word2vec/ (see section Pre-trained word and phrase vectors)
+
+
+Big table with word embeddings for different languages: http://vectors.nlpl.eu/repository/
+
+We will take Corpus of Historical American English (diachronic) (row 188 from the table from http://vectors.nlpl.eu/repository/)
+There are WE trained for different periods, let'take only one model, for example, for 2000 year.
+
+
+```{r}
+vectors <- read.vectors("data/188/2000.bin", binary=TRUE) 
+```
+
+Note: the value of argument 'binary' depends on the file format of loaded embeddings. 
+Usually, if the extension of file is '.bin', then you need to specify binary=TRUE, if the extension is '.vec' - then binary=FALSE. 
+Anyway, information about whether you load binary or not binary file is usually written somewhere in the source of the word vectors. 
+
+
+let's look at the examples of words in this loaded word embeddings:
+
+```{r}
+# first 20 rows
+rownames(vectors@.Data)[0:20]
+```
+
+Tagset in this word embeddings is Universal Tags, here are the description of the tags: https://universaldependencies.org/u/pos/all.html
+So, all our words look like: word_POStag.
+
+Note: there can be different tagset used or there can be even no tags at all.
+
+Now, let's look at the examples of simple operations with word vectors
+
+## search in the vicinity of a given word
+
+```{r}
+vectors %>% closest_to("cry_VERB")
+vectors %>% closest_to("tear_NOUN")
+```
+
+## adding and plotting
+
+```{r}
+crying <- vectors %>% closest_to(~"cry_VERB" + "tear_NOUN", 75)
+vectors[[crying$word, average=F]] %>% plot(method="pca")
+```
+
+## adding and subtracting meanings
+
+```{r}
+vectors %>% closest_to("good_ADJ",30)
+vectors %>% closest_to("bad_ADJ",30)
+vectors %>% closest_to(~"good_ADJ"+"bad_ADJ",30)
+vectors %>% closest_to(~"good_ADJ"-"bad_ADJ",30)
+vectors %>% closest_to(~"bad_ADJ"-"good_ADJ",30)
+```
+
+## vectors %>% closest_to(~"king" - "man" + "woman")
+
+```{r}
+vectors %>% closest_to(~"king_NOUN" - "man_NOUN" + "woman_NOUN")
+
+vectors %>% closest_to("paris_NOUN")
+vectors %>% closest_to(~"paris_NOUN" - "france_NOUN" + "britain_NOUN")
+```
+
+(not so nice arithmetic as we saw on the lecture, but still smth more or less logical)
+
+## semantic “dimensions”
+
+```{r}
+vectors[[c("aunt_NOUN","uncle_NOUN","brother_NOUN","sister_NOUN","grandmother_NOUN","grandfather_NOUN","husband_NOUN","wife_NOUN"), average=F]] %>% plot(method="pca") 
+```
+
+##
+```{r}
+top_evaluative_words <- vectors %>% closest_to(~"good_ADV"+"bad_ADV", n=75)
+goodness <- vectors %>% closest_to(~"good_ADV"-"bad_ADV",n=Inf)
+eat <- vectors %>% closest_to(~"eat_VERB" - "drink_VERB",n=Inf)
+```
+
+```{r}
+library(dplyr)
+library(ggplot2)
+top_evaluative_words %>%
+    inner_join(goodness) %>%
+    inner_join(eat) %>%
+    ggplot() + geom_text(aes(x=`similarity to "eat_VERB" - "drink_VERB"`, y=`similarity to "good_ADV" - "bad_ADV"`,label=word))
+```
+
+
+##
+
+You can try to find top-similar words for some other words. 
+Or you can find some similar relationships between word vectors as "king" - "man" + "woman".
+
+
+## 
+
+If you want to train your own word2vec model on some corpus, take a look at the word2vec library as well.
+
+
+##
+
+In the case of diachronic word embeddings (as we used here), you can look at the top-similar words for some word of interest in a different periods, for example. Or to look at the words vectors relationships through time.
+
