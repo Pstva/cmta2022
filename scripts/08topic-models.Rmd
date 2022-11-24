@@ -1,0 +1,473 @@
+---
+title: From words to topics. Topic modeling
+output: html_document
+editor_options: 
+  chunk_output_type: inline
+---
+
+# From words to topics
+
+On the example of LSA we have seen, how the word co-occurrence
+information can be used to automatically induce the semantic
+similarity between words. Topic modeling is a more modern successor to
+the idea of leveraging word co-occurrence to arrive at the level of
+topics.
+
+We will use MALLET for building LDA model. Mallet is an open source toolkit, written by Andrew McCullum. It is basically a Java based package which is used for NLP, document classification, clustering, topic modeling, and many other machine learning applications to text. It provides us the Mallet Topic Modeling toolkit which contains efficient, sampling-based implementations of LDA as well as Hierarchical LDA.
+
+Mallet is written in Java, so we also need rJava package. Package "mallet" in R 
+is just an interface for the Java Machine Learning for Language Toolkit (mallet).
+
+## Topic modeling classics: LDA
+
+Note: there may be problems with installing rJava, I think that you need Java to be installed on your computer.
+If there are errors in installing rJava, these links may help:
+
++ Installing rJava on Ubuntu - https://www.r-bloggers.com/2018/02/installing-rjava-on-ubuntu/
++ Installing rJava on Windows - https://cimentadaj.github.io/blog/2018-05-25-installing-rjava-on-windows-10/installing-rjava-on-windows-10/
++ Installing rJava on MacOS - https://zhiyzuo.github.io/installation-rJava/ ,
+https://medium.com/@anmol.more/rjava-installation-fix-for-mac-os-25c5caa3f8de
+
+
+```{r, eval=FALSE}
+#install.packages('rJava')
+#install.packages("mallet")
+```
+
+Before proceeding, we will limit Java to use not more than 1G of RAM. 
+
+```{r}
+options(java.parameters = "-Xmx1g")
+```
+
+Load required packages:
+
+```{r}
+library(rJava)
+library(mallet)
+library(dplyr)
+```
+
+## Data preparation
+
+
+Let's take the data of the presidents speeches again. But today we will try to find topics in these speeches.
+
+```{r}
+library(readr)
+data <- read_csv('data/transcripts.csv') %>% select(date, president, transcript)
+head(data)
+```
+
+We will remain speeches the documents here.
+
+We also need to clean our texts before modelling. Good idea is to lemmatize them, delete stop-words (however, mallet can take file with stop-words that it will drop, so we can remain them here). This is a basic preprocessing. It may be also a good idea to remain only some parts of speech, for example, we can remain only nouns and adjectives (though, one can experiment with the words remained). Let's do it as well. In order to define POS-tags of all the words we can use **udpipe** that we have already used on the practice 2.
+
+
+In order to be able to merge lemmatized/tokenized words into original text, we will need column for doc id. We will also need column doc_id to pass to mallet function. So, let's use row name as doc_id.
+
+
+Just fot simplicity, we will remain only a set of speeches in order to make all the calculations faster (especially, udpipe calculations). In your homework/final project, it is better to use more texts.
+
+```{r}
+# taking first 50 speeches
+# just for simplification
+data <- head(data, 50)
+```
+
+
+What is more, if your texts are in Russian, you can use tool Mystem by Yandex as a lemmatizer and POS-tagger, it is faster than udpipe. Instruction for Mystem: https://github.com/maslinych/cmta2021/blob/main/scripts/02preprocessing.Rmd in part Лемматизация.
+
+
+```{r}
+data <- data %>% mutate(doc_id = row_number())
+```
+
+
+### POS-tagging
+
+You can use *udpipe* package for tagging parts of speech in English.
+Some docs for https://ladal.edu.au/tagging.html.
+
+POS tags description: https://universaldependencies.org/u/pos/index.html
+
+```{r}
+#install.packages('udpipe')
+library(udpipe)
+```
+
+```{r}
+# download language model
+
+#model_loaded <- udpipe::udpipe_download_model(language = "english-ewt")
+#filename = model_loaded$file_model
+
+# or, if you have already load it, you can just copy path to the model into this variable
+# note: this is MY path, it will be different for you
+filename = "/home/alena-pestova/Рабочий стол/CMAT/cmta2022/scripts/english-ewt-ud-2.5-191206.udpipe"
+```
+
+If you have downloaded a model once, you can also load the model directly from the place where you stored it on your computer. 
+
+(first argument - the folder you store the model)
+```{r}
+# load language model from your computer after you have downloaded it once
+
+model <- udpipe_load_model(file = filename)
+```
+
+We can now use the model to annotate out text.
+
+Some documentation on the function udpipe::udpipe_annotate: https://rdrr.io/cran/udpipe/man/udpipe_annotate.html
+
+```{r}
+# tokenise, POS-tagging
+# it is not very fast, if you want you can select only a sample of data, or just skip this step 
+# and perform usual lemmatization with the function lemmatize
+# trace=TRUE stands for showig the annotation progress, you can delete it if you do not want to see this output
+text_anndf <- udpipe::udpipe_annotate(model, x =  data$transcript, doc_id = data$doc_id, tagger = "default", parser = "none", trace=TRUE) %>%
+  as.data.frame()
+```
+
+```{r}
+head(text_anndf, 10)
+```
+
+
+```{r}
+# selecting only necessary columns
+text_anndf <- text_anndf %>% select(doc_id, lemma, upos)
+text_anndf %>% filter(doc_id == 2)
+```
+Now, we will select only lemmas for words that have specific POS-tags (in our case, we selected "ADJ" and "NOUN", but you can choose some other). Again, the descriptions of POS-tags are here: https://universaldependencies.org/u/pos/index.html.
+
+Then we need to merge selected lemmas into original documents. 
+Note that we need to pass vector/column of DOCUMENTS to mallet, not distinct words!
+
+
+```{r}
+library(tidyr)
+data_clean <- text_anndf %>% 
+  # remaing only nouns and adjectives
+  filter(upos %in% c("ADJ", "NOUN")) %>%
+  select(-upos) %>%
+  group_by(doc_id) %>% 
+  # grouping by doc_id, merging all lemmas by space
+  summarize(text = paste(lemma, collapse = ' '))
+
+```
+
+
+It does not seem true for this case, but there can be situations when some docs are dropped after previous steps (if, for some reason, they do not have words that we remained). Anyway, let's add date and president columns for this data - we can join two dataframes by doc_id.
+
+```{r}
+data_clean <- merge(x = data_clean, y = data, by = "doc_id", all.x = TRUE)
+head(data_clean)
+```
+
+
+Little summary: before going to building mallet model, you need dataframe with:
++ clean prepared texts, one row - one document. (in our case, this is column text)
++ doc_id column - unique value for each row (column doc_id)
++ you can remain other columns, for ex, here we remained column date and president. 
+So, we would be able look at the topics in different periods, for different presidents.
+We will not use these column in training the model, but afterwards, we can just use the information from them.
+
+### LDA: Model preparation
+
+Mallet will require the list of stopwords as a file, so we write out
+the standard stopwords list before processing. (or we can just delete them before)
+
+```{r}
+library(stopwords)
+library(readr)
+# note that stopwords("en") is just a vector with words, and we can add other words to it if it's necessary
+# for example:
+
+stop_words <- stopwords("en")
+# see, our word appear in the end of the vector.
+modified_stop_words <- append(stop_words, 'some_word')
+modified_stop_words
+```
+
+```{r}
+# but we will use standard stop-words list 
+write_lines(stopwords("en"), "stopwords.txt")
+```
+
+As a first step, mallet has to process documents texts to tokenize texts
+and to collect usage statistics. Document IDs and Document contents
+should be passed to it as character vectors. Note, that doc ids should
+be strings, not numbers, hence `as.character`.
+
+```{r}
+mallet.instances <- mallet.import(id.array=as.character(data_clean$doc_id),
+                                  text.array=data_clean$text,
+                                  stoplist="stopwords.txt")
+```
+
+Now we set the parameters for the desired model, and load the data
+prepared in the previous step. 
+
+```{r}
+topic.model <- MalletLDA(num.topics=30) # number of topics, you can try other number of topics
+# fixing seed for reproducibility
+topic.model$setRandomSeed(42L)
+topic.model$loadDocuments(mallet.instances) 
+topic.model$setAlphaOptimization(20, 50) # optimizing hyperparameters
+```
+
+Next we collect some statistics about the dictionary and frequency of
+tokens for later use.
+
+```{r}
+vocabulary <- topic.model$getVocabulary() # corpus dictionary
+word.freqs <- mallet.word.freqs(topic.model) # frequency table
+## top frequent words (by doc frequency)
+word.freqs %>% arrange(desc(doc.freq)) %>% head(10)
+```
+
+### LDA: training a model
+
+The strange syntax is due to Java: here we run a `train` method of the
+object `topic.model`. The argument is the number of iterations.
+
+```{r}
+topic.model$train(500)
+```
+
+Selecting the best topic for each token in 10 iterations.
+
+```{r}
+topic.model$maximize(10)
+```
+
+### LDA: results
+
+Doc-topics table.
+
+```{r}
+doc.topics <- mallet.doc.topics(topic.model, smoothed=TRUE, normalized=TRUE)
+
+# trained document distributions over topics (p(t|d))
+# for each document (rows) we have proportions of topics in this document (columns are topics).
+doc.topics
+```
+
+Word-topics table.
+
+```{r}
+# trained topic distributions over words (p(w|t))
+# for each topic (rows) we have distributions over words in this topic topic (columns are words).
+topic.words <- mallet.topic.words(topic.model, smoothed=TRUE, normalized=TRUE)
+```
+
+Topic labels (5 top words)
+
+```{r}
+# 3rd argument stands for the number of top words to show
+topic.labels <- mallet.topic.labels(topic.model, topic.words, 5)
+topic.labels
+```
+
+### Results Analysis: a Common Way
+
+Inspect the top-30 words for each topic and guess what they are about.
+
+```{r}
+for (k in 1:nrow(topic.words)) {
+    top <- paste(mallet.top.words(topic.model, topic.words[k,], 30)$term,collapse=" ")
+    cat(paste(k, top, "\n"))
+}
+```
+
+Inspect the first few documents with a given topic weight more than
+5% (you can choose some other threshold, this is just some advice that often works). We will define a function that does that for us.
+
+```{r}
+top.docs <- function(doc.topics, topic, docs, top.n=10) {
+    head(docs[order(-doc.topics[,topic])], top.n)
+}
+```
+
+An example:
+
+```{r}
+# top-documents for the first topic
+top.docs(doc.topics, 1, data_clean$text)
+```
+
+may be more suitable to look at original texts:
+
+```{r}
+# 1 top-document for the first topic
+top.docs(doc.topics, 1, data_clean$transcript,  top.n=1)
+```
+
+
+Visualizing topic similarity (hierarchical clustering) of topics.
+
+Similarity by topics co-ocurrence in documents.
+
+```{r}
+plot(mallet.topic.hclust(doc.topics, topic.words, 0), labels=topic.labels)
+```
+
+Similarity by the set of words in the topics.
+
+```{r}
+plot(mallet.topic.hclust(doc.topics, topic.words, 1), labels=topic.labels)
+```
+
+Balanced similarity by words and documents.
+
+```{r}
+plot(mallet.topic.hclust(doc.topics, topic.words, 0.5), labels=topic.labels)
+```
+
+## LDA: Interactive Visualization
+
+Install the required packages and load them.
+
+```{r eval=FALSE}
+#install.packages("LDAvis")
+#install.packages("servr")
+```
+
+```{r}
+library(LDAvis)
+library(servr)
+```
+
+To create this interactive visualization, the information on the
+length of all documents (in words) is required. We will count words
+using `str_count` function from `stringr` package.
+
+```{r}
+library(stringr)
+doc.length <- str_count(data_clean$text, boundary("word"))
+doc.length[doc.length==0] <- 0.000001 # avoid division by zero
+```
+
+Visualization setup.
+
+```{r}
+json <- createJSON(phi = topic.words, theta=doc.topics, doc.length=doc.length, vocab=vocabulary, term.frequency=word.freqs$word.freq)
+```
+
+Launch interactive interface.
+
+```{r eval=FALSE}
+serVis(json, out.dir="lda50", open.browser=TRUE)
+```
+NOTE: open the plot in new window in order to see the full vizualization.
+
+
+## Example of further analysis
+
+Here I will show some examples that can be useful for your final projects if you use TM.
+It may be interesting to look at the topics distribution across all the collection or in some groups of documents (and then compare this groups, for ex). 
+
+
+### Calculating topic proportions in all the collection
+
+
+```{r}
+# just using raw values from doc.topics
+colSums(doc.topics)
+```
+
+```{r}
+# or we can binarize data first - choose some threshold, for ex, 0.05 for binarization
+# we assume that topic is present in the doc, if its proportion > 0.05, otherwise, it is not presented in doc
+doc.topics.bin <- ifelse(doc.topics > 0.05, 1, 0)
+
+# then, we can calculate the number of docs, in which topic is present
+colSums(doc.topics.bin)
+
+# then you can draw some nice graph visualizing this numbers (bar plot)
+```
+
+
+### What if you want to calculate proportions of topics in speeches of different president? Or for some other groups?
+
+Then, we need to connect original data to our matrix 'doc.topics'. Actually, let's use already binarized version of it - 'doc.topics.bin'. We want to add data about topics presence to out original data. So, let's do it.
+
+
+```{r}
+# our original data - data_clean
+# we just concat two matrices by columns
+data_clean_topics <- cbind(data_clean, doc.topics.bin)
+head(data_clean_topics)
+# you can then rename columns as topics short names and you can drop unnecesary topics (noisy ones, for ex)
+```
+
+When we have data like this, we can anything we want: for ex, we can calculate the number of topics represented in speeches of each president
+
+```{r}
+topics_president <- data_clean_topics %>% 
+  select(-date, -text, -transcript, -doc_id) %>%
+  group_by(president) %>%
+   summarise(across(everything(), sum))
+
+# topics count in each presidents' speeches
+topics_president
+
+# for comparing topics presence across the presidents may be better to normalize all rows by the total number of documents for each president (because different presidents have different number of docs here)
+```
+
+
+
+### Topics interaction: if we want to look at what topics appear together
+
+Let's again look at out binarized matrix doc.topics.bin. This is document-topic matrix with values 0 and 1. We can just perform matrix multiplication : transposed(doc.topics.bin) * doc.topics.bin. And then we obtain matrix topics-to-topics, where values - the number of times 2 topics appeared together in one doc. 
+
+Why is it so? Remember matrix multiplication from the classes of linear algebra (row of the 1st matrix is multiplied by the column of the second) - here as a ith row in the 1st matrix transposed(doc.topics.bin) we have vector like this [0, 1, 1, 0, ,....] (presence of the topic i in each document), the same for the jth column in the 2nd matrix doc.topics.bin - we have vector for presence of the topic j in each document. If we calculate the dot product of this 2 vectors we will have the number of times, when these 2 topics appeared together in all the docs. Why? Imagine we have only 3 docs and now we multiple ith row from the 1st matrix and jth column for the 2nd matrix - let the vectors be like this [0, 0, 1] * [1, 0, 1] for the ith row and jth column correspondingly. So, the dot product of them - 0 * 1 + 0 * 0 + 1 * 1 = 1. So, we have only one non-zero element in the sum - for the third doc, in which both topics appeared.
+
+```{r}
+# (30 x 50) x (50 x 30) = (30 x 30) - we have 30 topics, 50 docs
+# %*% - operator for matrix multiplication
+topic.topic = t(doc.topics.bin) %*% doc.topics.bin
+
+# by the diagonal we just have topics count in the collection
+topic.topic 
+
+# now, you can visualize this matrix somehow (with heatmap, adding topics names as rownames and colnames)
+# or you can make a graph, using these values as the edges
+# but, again, for better comparison, may it is better to normalize this values somehow, for ex, divide each row  by the total count of topic in the collection or you may find some other way
+```
+
+
+## What you may do in your final project (or somewhere else)
++ first, you need to preprocess your data
++ remain some columns by which you will be able to compare topics 
++ build models with the different number of topics, choose the best one looking at the top-words of the topics - this is very subjective step, and there is no right way to do it. Just choose the model which topics seem to you more interpretable/concrete enough/general enough/suitable for the analysis
++ interpret all the topics from the model you chose - look at the top-words (it is better to look at the bigger list) and loot at the most representative docs for each topic. If there is noisy/not interpetable topic, just give it this label, you can just delete it in further analysis.
++ save you interpretations and short names for topics, show them. look at the topics distribution in the whole collection (with the names of the topics you gave them)
++ then, it it up to you, what you can do next. It depends on your data ans research questions. I showed the basic examples, how you can connect your original data to obtained topics, so then you can calculate their proportions in different groups (that you have) or some other things you want.
+
+### Some advices
++ if you use this method and some steps (preprocessing, model training etc.) takes long time, divide this parts into separate scripts. I mean, for example, you can preprocess your data, save it, and then load it before training the model. So, if you need to rerun model, rerun script etc., then you will not wait for data preprocessing again, you can just load ready for training file. And, when you chose some model and trained it, you can either save the model itself (I have not checked it, but I believe there is such functionality, you can check it in documentation) or you can just save the results you need - some data frames with topic columns etc. In this case, again, you can start at any time from the point you ended and use ready data.
+
++  instead of udpipe, use mystem for russian, here is the example: https://github.com/maslinych/cmta2021/blob/main/scripts/02preprocessing.Rmd in part Лемматизация.
+However, you can use udpipe for lemmatization and pos-tagging, but I believe it works slower. But you need to find suitable model for udpipe trained for russian (note that we loaded model for english). I believe there should be some list of available models for udpipe on their site.
+
+
+# Other TM: STM
+
+Structural topic models were suggested as an extension that allows not only
+to navigate the topical content, but to examine the correlation of the
+word usage in topics with the metadata on the documents. The model allows
+to trace how document-level features are correlated with topic
+prevalence, topical content, or both.
+
+I recommend to check out [the site of the
+package](https://www.structuraltopicmodel.com/), it contains
+references and links to the supporting material.
+
+In simple words, this type of TM allows you to account for document meta-data. 
+
+If you are interested in it or you need such kind of models in the future, look for examples on the Intenet. And there is example in the end of this practice from the previous year: https://github.com/maslinych/cmta2021/blob/main/scripts/07topic-models.Rmd
+
+I did not put the code for this model here, because I believe there is already a big amount of new information and methods you should understand. What is more, as I understood, this model works not so fast. But you can remember about it, if once you need smth like this for your research.
+
