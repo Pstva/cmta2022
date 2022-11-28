@@ -1,0 +1,309 @@
+---
+title: "Parsing games descriptions from metacritics"
+date: "2022-11-28"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+We will try to parse several pages from metacritics with reviews on video games.
+Our start page: https://www.metacritic.com/browse/games/score/metascore/all/all/filtered 
+Note: you can open it only with VPN, so turn on it before running the script.
+
+We will use rvest package for scraping. Rvest documentation: https://rvest.tidyverse.org/ (there are also some other examples of scraping).
+
+```{r}
+library(rvest)
+library(purrr)
+library(xml2)
+library(stringr)
+library(dplyr)
+```
+
+## Example for scraping one page
+
+If you go the link, you wil see that there are many pages with reviews. 
+First, we will look at the examples on the first page and then write full script for scraping several pages.
+
+```{r}
+url <- "https://www.metacritic.com/browse/games/score/metascore/all/all/filtered"
+
+# loading html for this url
+page <- read_html(url)
+```
+
+
+Full text from for this page:
+
+```{r}
+page %>% html_text()
+```
+
+It is not very interesting to look at the text from the whole html - we may be interested in some particular elements.
+
+So, we can try to find different elements in this html. For understanding what you need, you should inspect html code in the browser. By inspecting html code I mean looking at the code in your browser. You can either look at the whole html in a separate page, or to find the code for particular element. You can do it with using the right mouse button - just press it when pointing to the element of interest on the page in the browser and then select View "Page Source/Посмотреть код страницы" for the full code or "Inspect/Посмотреть код" for inspecting some element. Try to do it on some web-page in your browser.
+
+(https://www.howtogeek.com/416108/how-to-view-the-html-source-in-google-chrome/)
+
+For example, we see that there is header of the page with tag h2. Let's try to extract it with our code.
+
+```{r}
+page %>%
+    html_nodes("h2") %>%
+    html_text()
+```
+So, this is just the header for the whole page.
+
+But we need info about games - their names, scores and descriptions.
+
+If we inspect html code a little bit, we will see that each game has a header 
+and tag 'h3' is used in code for this names. Let's extract them.
+
+Some notes:
++ html_nodes('some rule here') - looking for all nodes in html that fit the rule
++ inside this function we use CSS selectors.
+CSS selectors define the pattern to select elements to which a set of CSS rules are then applied.
+
+Some basic selectors:
+https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Selectors
+
+For example, after inspecting html, we see that games names are contained in element with tag 'h3' in some elements with class 'title'. Then, we want to write the rule: find elements with tag 'h3' with class 'title'. Accorging to this link (https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Selectors), we understand that the rule is '.title h3'.
+
+```{r}
+title <- page %>%
+  html_nodes(".title h3") %>%
+  html_text()
+
+title
+```
+
+It seems that everything is okay as we have 100 names that were on the page.
+
+Now, let's extract date for each video game. 
+Again, we see that date is contained in some element with tag "span", but there are many elements with such tag. Okay, so we need to specify some more specific rule. Then, we see that each data goes after some information about the platform. It seems that is is quite specific knowledge, there are no such combinations for other elements. Let's construct our CSS selector accounting for this information.
+
+So, we see that this element with tag 'span' goes right after element with class 'platform'.
+If this element was in this element with class platform, we may use the similar rule as for header - smth like '.platform span'. But our data element goes right after platform class. So, we can use operator '+' for our selector - '.platform+ span'. (look at the link about css selectors).
+
+
+```{r}
+year <- page %>%
+  html_nodes(".platform+ span") %>%
+  html_text()
+
+year
+```
+
+Again, everything seems okay - we have 100 dates for 100 games on this page.
+
+The most interesting data here for us is game description. Here everything is quite simple - description is contained in element with tag 'summary'. So, our CSS selector is '.summary'
+
+```{r}
+description <- page %>%
+  html_nodes(".summary") %>%
+  html_text()
+
+description
+```
+
+So, again, we have 100 items in our list, this items are text descriptions from the site - everything is okay.
+
+In the same way, we can extract all other information for each game. There are more examples in script 'parsing_example_web_scraping.R'.
+
+But now let's assume that this is the only information about the video games that is interested for us - we just wanted to extract names, dates and descriptions.
+
+We saw the example of scraping one page. Befor going on to generalizing our script to several pages, 
+let's think about how we would save all the extracted data. It seems that the best way is to save info about each game to dataframe after scraping one page.
+
+So, we have variables title, year and description. We can just append all this data to some dataframe. So, we will have 3 columns for each game.
+
+
+```{r}
+games <- data.frame()
+
+games <- rbind(games, data.frame(title, year, description))
+games
+```
+
+## Scraping many pages
+
+If we manually go through several pages with reviews, we will see that all of them 
+have quite similar links - 
++ first page is 'https://www.metacritic.com/browse/games/score/metascore/all/all/filtered' or 
+'https://www.metacritic.com/browse/games/score/metascore/all/all/filtered?page=0'
++ second page - 'https://www.metacritic.com/browse/games/score/metascore/all/all/filtered?page=1'
++ third page - 'https://www.metacritic.com/browse/games/score/metascore/all/all/filtered?page=2'
+etc.
+
+So, in order to go through several pages we just need to change the id of page in the link.
+Then, we will perform the same code for each page in order to extract data from it. 
+
+So, we will just perform the same code for each page we need in a cycle
+
+```{r}
+# first, we create empty dataframe
+games <- data.frame()
+# specify the number of pages we want to scrap
+N = 10
+# in a cycle with from 0 to N with step 1
+for(page_num in seq(from = 0, to = N-1, by = 1)) {
+  # create a link for the page with page_num
+  link <- paste0("https://www.metacritic.com/browse/games/score/metascore/all/all/filtered?page=", page_num)
+  # then all other steps are the same as in the previous section
+  # loading html
+  page <- read_html(link)
+  # selecting all elements we need
+  title <- page %>%
+    html_nodes(".title h3") %>%
+    html_text()
+  year <- page %>%
+    html_nodes(".platform+ span") %>%
+    html_text()
+  description <- page %>%
+    html_nodes(".summary") %>%
+    html_text()
+  # appending new data to games dataframe
+  games <- rbind(games, data.frame(title, year, description))
+}
+```
+
+
+Our data:
+
+```{r}
+games
+```
+
+We see that the length of our df is 1000 - exactly what we expected, as we scraped 10 pages with 100 games each.
+
+Then, we can clean this data and use it for furhter analysis.
+
+```{r}
+# saving games df to csv
+#write.csv(games, "games.csv")
+```
+
+## Example on extracting new urls from the page
+
+We can also have a sitation when we need to extract some links from the page and then go to this links.
+In our case, we may need to visit the page of each video game and extract some information from it (for ex, there are user reviews on such pages of games). So, we need to extract the link to these pages from the main page and then go to them.
+
+In html, tag 'a' is responsible for links. And in order to extract the link itself we need to extract the value of attribute 'href' in this tag. 
+
+Here we will look at example for one page, but, of course, you can perform the same code for many pages as we do earlier.
+
+Here are the elements we interested in:
+
+```{r}
+page %>% 
+  # extracting node with tag 'a' with class 'title'
+  html_nodes("a.title")
+```
+But we need the urls - so we need extract href attribute from each of them
+
+```{r}
+page %>% 
+  # extracting node with tag 'a' with class 'title'
+  html_nodes("a.title") %>%
+  # extracting href attribute
+  html_attr("href")
+```
+
+And now, we have links. But, you may not that these links are not absolute, but relative. 
+It means that they show the path from some other path, in our case, the main path is the names of the site - 'https://www.metacritic.com'. So, in order to obtain the full url which we can load then, we need to 
+merge them
+
+
+```{r}
+
+game_links <-  page %>% 
+  # extracting node with tag 'a' with class 'title'
+  html_nodes("a.title") %>%
+  # extracting href attribute
+  html_attr("href") %>%
+  # merging "https://www.metacritic.com" and obtained relative links
+  paste("https://www.metacritic.com", ., sep = "")
+
+game_links
+```
+
+
+Great, now we have links for all the games from the page. So then we can go in a cycle through this list and load html page for each of them (and extract all information we need, of course).
+
+## Parsing tables
+
+Actually, if we inspect html code a little bit more, we would see that all the data we are interested in
+is contained in a table - in element with tag table with class "clamp-list".
+
+So, let's try to parse the same data in a different way - we will find a table we need and then we will extract necessary fields.
+
+Note: table in html contained between tags <table> and <\table>. Each element (row) is contained between tags <tr> and <\tr>. You can see in html code that it is exactly how our data is represented. 
+
+Again, we will look at the example for one page, but then you can do it for several pages.
+
+So, let's find the table we need first. 
+
+```{r}
+url <- "https://www.metacritic.com/browse/games/score/metascore/all/all/filtered"
+
+# loading html for this url
+page <- read_html(url)
+
+
+# all the nodes with tables
+page %>% 
+  html_nodes('table') 
+
+# the first table from all the four tables we found
+page %>% 
+  html_nodes('table') %>% .[1]
+
+# full first table
+first_table <- page %>% 
+  html_nodes('table') %>% .[1] %>%
+  html_table()
+
+first_table <- as.data.frame(first_table)
+first_table
+```
+
+Okay, here we have smth strange - table is parsed not correctly. May be, the first method was better.
+We will look at the more nice example of parsing table later, but even here we can try to make this table look better. Idea: we see that all the data is contained is the second column, and all the values are separated but many '\n' symbols. So, let's try to extract separate columns from this.
+
+```{r}
+library(stringr)
+first_table <- cbind(first_table, str_split(first_table$X2, '\n', simplify=TRUE))
+first_table
+```
+
+So, now we have some ugly dataframe with many empty and strange columns. But nice thing here is that, actually, we can understand the meaning of each column and we can try to extract only necessary ones.
+
+```{r}
+clean_first_table <- first_table %>%
+  select(`10`, `24`, `31`) 
+
+clean_first_table
+```
+
+And, again, we have the same data - but, actually, here we have only data for 5 first games, so we need to do the same thing for all the tables we found and then merge them by rows. 
+
+This example was to show thath there are several ways how to parse the same data.
+
+
+## Parsing table from Wikipedia
+
+Now, let's try to scrap other table from Wikipedia. This table will be nicer and more accurate.
+
+```{r}
+tab_page <- "https://ru.wikipedia.org/wiki/%D0%A1%D0%BF%D0%B8%D1%81%D0%BE%D0%BA_%D1%81%D1%82%D1%80%D0%B0%D0%BD_%D0%BF%D0%BE_%D0%BF%D0%BE%D0%BA%D0%B0%D0%B7%D0%B0%D1%82%D0%B5%D0%BB%D1%8F%D0%BC_%D0%BD%D0%B5%D1%80%D0%B0%D0%B2%D0%B5%D0%BD%D1%81%D1%82%D0%B2%D0%B0_%D0%B4%D0%BE%D1%85%D0%BE%D0%B4%D0%BE%D0%B2"
+tab_link <- read_html(tab_page)
+
+apple_table = tab_link %>% html_nodes("table") %>% .[2] %>% 
+  html_table(fill = TRUE) %>% .[[1]]
+
+apple_table
+```
+
