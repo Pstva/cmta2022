@@ -37,12 +37,21 @@ TRUE). Результат лемматизации сохраним в коло�
 library(readr)
 library(tidytext)
 library(dplyr)
-poems <- read_csv("poems_religion.csv", col_names=c('url_poem', 'author', 'url_author', 'poem'))
+poems <- read_csv("poems_religion.csv", col_names=c('url_poem', 'author', 'url_author', 'name', 'poem'))
+
+
+# посмотрим с маленьких примеров из 10 текстов
+poems_test <- head(poems, 10)
+# плюс надо обязательно заменить переносы строк на пробелы, иначе все сломается
+library(stringr)
+poems_test$poem <- str_replace_all(poems_test$poem, '\n', ' ')
+
 
 library("stopwords")
 rustop <- tibble(word = stopwords("ru"))
 
-poems$lem <- system2("/home/alyona-pestova/Рабочий стол/CMAT/cmta2022/scripts/mystem", c("-d", "-l", "-c"), input = poems$text, stdout = TRUE)
+poems_test$lem <- system2("/home/alyona-pestova/Рабочий стол/CMAT/cmta2022/scripts/mystem", c("-d", "-l", "-c"), input = poems_test$poem, stdout = TRUE)
+
 ```
 
 Теперь мы можем построить лемматизированный частотный список. Обратите
@@ -50,7 +59,7 @@ poems$lem <- system2("/home/alyona-pestova/Рабочий стол/CMAT/cmta2022
 text, а lem, где находятся уже лемматизированные данные.
 
 ```{r}
-sp.lemmas <- poems %>% unnest_tokens(word, lem)
+sp.lemmas <- poems_test %>% unnest_tokens(word, lem)
 ```
 
 **NB** Правильная последовательность операций: СНАЧАЛА лемматизация,
@@ -76,7 +85,9 @@ sp.freq
 mystem и сохраним результат в колонке gram.
 
 ```{r}
-poems$gram <- system2("mystem", c("-d", "-l", "-c", "-ig"), input = poems$text, stdout = TRUE)
+poems_test$gram <- system2("/home/alyona-pestova/Рабочий стол/CMAT/cmta2022/scripts/mystem", c("-d", "-l", "-c", "-ig"), input = poems_test$poem, stdout = TRUE)
+
+poems_test
 ```
 
 В грамматической информации для нас могут быть интересны части речи и
@@ -103,7 +114,7 @@ poems$gram <- system2("mystem", c("-d", "-l", "-c", "-ig"), input = poems$text, 
 базового R):
 
 ```{r}
-poems$clean <- gsub("[[:punct:]]", " ", poems$text) #избавляемся от пунктуации
+poems_test$clean <- gsub("[[:punct:]]", " ", poems_test$poem) #избавляемся от пунктуации
 ```
 
 Избавляемся от цифр (используем функцию str_replace_all, функционально
@@ -111,7 +122,7 @@ poems$clean <- gsub("[[:punct:]]", " ", poems$text) #избавляемся от
 
 ```{r}
 library(stringr)
-poems$clean <- str_replace_all(poems$clean, "[0-9]+", " ")
+poems_test$clean <- str_replace_all(poems_test$clean, "[0-9]+", " ")
 ```
 
 ### Извлечение лемм и частей речи из вывода mystem
@@ -129,7 +140,8 @@ str_extract_all из пакета stringr.
 совпадает с этим шаблоном, будет просто проигнорировано.
 
 ```{r}
-sp.gram <- poems %>% unnest_tokens(word, gram, token = stringr::str_extract_all, pattern="\\w+=[A-Z]+")
+sp.gram <- poems_test %>% unnest_tokens(word, gram, token = stringr::str_extract_all, pattern="\\w+=[A-Z]+")
+head(sp.gram)
 ```
 
 Разберем состав регулярного выражения: 
@@ -149,8 +161,10 @@ sp.gram <- poems %>% unnest_tokens(word, gram, token = stringr::str_extract_all,
 известной нам функции tidyr::separate по символу "=".
 
 ```{r}
+library(tidyr)
 sp.lempos <- sp.gram %>%
     separate(word, c("lemma", "pos"), sep = "=") 
+head(sp.lempos)
 ```
 
 P.S. Для лемматизации и для определения частей речи можно использовать
@@ -159,8 +173,3 @@ P.S. Для лемматизации и для определения часте
 токенизированный дата-фрейм) с леммами, частями речи, синтаксической
 информацией. Его недостатки: более медленная обработка, больше ошибок
 при определении частей речи и грамматических форм слов.
-
-Если интересно, ассистенты могут подготовить дополнительную информацию
-по udpipe и примеры использования.
-
-
